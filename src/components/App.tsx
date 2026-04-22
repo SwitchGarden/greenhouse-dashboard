@@ -1248,7 +1248,6 @@ const overdueOrders = useMemo(() => {
     const podsInProduction = activeInventory.reduce((sum, row) => sum + toNumber(getInventoryActivePods(row)), 0);
 
     return {
-      activeOrders: activeOrders.length,
       totalQtyOnOrder,
       totalNewTowersNeeded,
       activeInventoryCount: activeInventory.length,
@@ -2563,7 +2562,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         {activePage === "dashboard" && (
           <div style={sectionStackStyle}>
             <ResponsiveStatGrid>
-              <StatCard label="Active Orders" value={dashboardStats.activeOrders} />
               <StatCard label="Qty on Order" value={dashboardStats.totalQtyOnOrder} />
               <StatCard label="New Towers Needed" value={dashboardStats.totalNewTowersNeeded} />
               <StatCard label="Active Inventory Entries" value={dashboardStats.activeInventoryCount} />
