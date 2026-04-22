@@ -117,6 +117,12 @@ export default function App() {
   const [activePage, setActivePage] = useState<PageKey>("dashboard");
   const [loadingData, setLoadingData] = useState(false);
 
+  // Loading states for async handlers
+  const [markPlantedLoading, setMarkPlantedLoading] = useState<string | null>(null);
+  const [transplantLoading, setTransplantLoading] = useState(false);
+  const [harvestLoading, setHarvestLoading] = useState(false);
+  const [packLoadingRow, setPackLoadingRow] = useState<number | null>(null);
+
   const [staffRows, setStaffRows] = useState<StaffActionRow[]>([]);
   const [salesOrders, setSalesOrders] = useState<SalesOrderRow[]>([]);
   const [productionInventory, setProductionInventory] = useState<ProductionInventoryRow[]>([]);
@@ -1475,6 +1481,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   const handleMarkPlanted = async (task: { crop: string; totalTowers: number; earliestDueDate: string }) => {
     try {
       setDailyMessage("");
+      setMarkPlantedLoading(task.crop);
 
       const selectedTowerType = plantingTowerType[task.crop] || "Low Density";
       const maxPods = getTowerMaxPods(selectedTowerType);
@@ -1569,12 +1576,15 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     } catch (error) {
       console.error("handleMarkPlanted error:", error);
       setDailyMessage("Error marking planted.");
+    } finally {
+      setMarkPlantedLoading(null);
     }
   };
 
   const handleMarkTransplanted = async () => {
     try {
       setDailyMessage("");
+      setTransplantLoading(true);
 
       if (!transplantRowNumber) {
         setDailyMessage("Please select a seeded item to transplant.");
@@ -1709,6 +1719,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     } catch (error) {
       console.error("handleMarkTransplanted error:", error);
       setDailyMessage("Error marking transplanted.");
+    } finally {
+      setTransplantLoading(false);
     }
   };
 
@@ -1723,6 +1735,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   const handleReadyHarvestSubmit = async () => {
     try {
       setDailyMessage("");
+      setHarvestLoading(true);
 
       const selected = productionInventory.find((row) => String(row.rowNumber) === harvestForm.activeRowNumber);
       if (!selected) {
@@ -1825,6 +1838,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     } catch (error) {
       console.error("handleReadyHarvestSubmit error:", error);
       setDailyMessage("Error marking harvested.");
+    } finally {
+      setHarvestLoading(false);
     }
   };
 
@@ -1838,6 +1853,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   }) => {
     try {
       setDailyMessage("");
+      setPackLoadingRow(task.rowNumber);
 
       const result = await postToBackend({
         action: "saveStaffAction",
@@ -1873,6 +1889,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     } catch (error) {
       console.error("handleMarkPacked error:", error);
       setDailyMessage("Error marking packed.");
+    } finally {
+      setPackLoadingRow(null);
     }
   };
 
@@ -2938,8 +2956,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     </select>
                   </td>
                   <td style={tdStyle}>
-                    <button onClick={() => handleMarkPlanted(task)} style={primaryButtonStyle}>
-                      Mark Planted
+                    <button onClick={() => handleMarkPlanted(task)} style={primaryButtonStyle} disabled={markPlantedLoading === task.crop} aria-label={`Mark ${task.crop} planted (${task.totalTowers} towers)`}>
+                      {markPlantedLoading === task.crop ? "Planting..." : "Mark Planted"}
                     </button>
                   </td>
                 </tr>
@@ -3069,8 +3087,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       </Field>
 
       <ActionRow message={dailyMessage}>
-        <button onClick={handleMarkTransplanted} style={primaryButtonStyle}>
-          Mark Transplanted
+        <button onClick={handleMarkTransplanted} style={primaryButtonStyle} disabled={transplantLoading}>
+          {transplantLoading ? "Transplanting..." : "Mark Transplanted"}
         </button>
       </ActionRow>
     </Panel>
@@ -3112,7 +3130,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                         <td style={tdStyle}>{getInventoryRemainingExpectedLbs(item)}</td>
                         <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
                         <td style={tdStyle}>
-                          <button onClick={() => startReadyHarvestAction(item)} style={primaryButtonStyle}>
+                          <button onClick={() => startReadyHarvestAction(item)} style={primaryButtonStyle} aria-label={`Mark ${getInventoryCrop(item)} in tower ${getInventoryTower(item) || 'unassigned'} as harvested`}>
                             Mark Harvested
                           </button>
                         </td>
@@ -3149,7 +3167,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                               <input value={harvestForm.note} onChange={(e) => dispatchHarvest({ type: "SET_FIELD", field: "note", value: e.target.value })} style={compactInputStyle} />
                             </Field>
                             <ActionRow message={dailyMessage}>
-                              <button onClick={handleReadyHarvestSubmit} style={primaryButtonStyle}>Save Harvest</button>
+                              <button onClick={handleReadyHarvestSubmit} style={primaryButtonStyle} disabled={harvestLoading}>{harvestLoading ? "Saving..." : "Save Harvest"}</button>
                               <button onClick={clearReadyHarvestAction} style={secondaryButtonStyle}>Cancel</button>
                             </ActionRow>
                           </td>
@@ -3197,8 +3215,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   <td style={tdStyle}>{formatDateDisplay(task.dueDate)}</td>
                   <td style={tdStyle}>{task.status}</td>
                   <td style={tdStyle}>
-                    <button onClick={() => handleMarkPacked(task)} style={primaryButtonStyle}>
-                      Mark Packed
+                    <button onClick={() => handleMarkPacked(task)} style={primaryButtonStyle} disabled={packLoadingRow === task.rowNumber} aria-label={`Mark ${task.crop} for ${task.customer} as packed`}>
+                      {packLoadingRow === task.rowNumber ? "Packing..." : "Mark Packed"}
                     </button>
                   </td>
                 </tr>
