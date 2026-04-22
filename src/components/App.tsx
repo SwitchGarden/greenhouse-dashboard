@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 type PageKey = "dashboard" | "inventory" | "staffDaily";
 
@@ -103,7 +103,7 @@ type ProductionInventoryRow = {
   notes?: string;
 };
 
-type OrderUnitType = "Lbs" | "Plants" | "6oz Bag" | "6oz Clamshell";
+type OrderUnitType = "Lbs" | "Plants" | "6oz Bag" | "6oz Clamshell" | "0.75oz Small Bag";
 
 type SalesPlannerResult = {
   availableQty: number;
@@ -127,26 +127,30 @@ type DraftOrderLine = {
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
 const SIX_OZ_IN_LBS = 6 / 16;
+const SMALL_BAG_OZ_IN_LBS = 0.75 / 16;
 const REPEAT_HARVEST_CROPS = new Set(["brassica"]);
 
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-const isContainerUnit = (unitType: string) => unitType === "6oz Bag" || unitType === "6oz Clamshell";
+const isContainerUnit = (unitType: string) => unitType === "6oz Bag" || unitType === "6oz Clamshell" || unitType === "0.75oz Small Bag";
 
 const quantityToLbs = (unitType: string, quantity: number) => {
   if (unitType === "Plants") return 0;
+  if (unitType === "0.75oz Small Bag") return Math.round(quantity * SMALL_BAG_OZ_IN_LBS * 100) / 100;
   if (isContainerUnit(unitType)) return Math.round(quantity * SIX_OZ_IN_LBS * 100) / 100;
   return Math.round(quantity * 100) / 100;
 };
 
 const availableLbsToUnitQty = (unitType: string, lbs: number, plants: number) => {
   if (unitType === "Plants") return Math.max(0, Math.floor(plants));
+  if (unitType === "0.75oz Small Bag") return Math.max(0, Math.floor(lbs / SMALL_BAG_OZ_IN_LBS));
   if (isContainerUnit(unitType)) return Math.max(0, Math.floor(lbs / SIX_OZ_IN_LBS));
   return Math.max(0, Math.round(lbs * 100) / 100);
 };
 
 const getUnitLabel = (unitType: string) => {
   if (unitType === "Plants") return "Plants";
+  if (unitType === "0.75oz Small Bag") return "Small Bags";
   if (unitType === "6oz Bag") return "Bags";
   if (unitType === "6oz Clamshell") return "Clamshells";
   return "Lbs";
@@ -168,7 +172,7 @@ const CROP_PROFILES: Record<
   cilantro: { expectedLbsPerTower: 6.4 },
   dill: { expectedLbsPerTower: 3.52 },
   fennel: { expectedLbsPerTower: 3.52 },
-  five_star: { expectedLbsPerTower: 3.52 },
+  five_star: { expectedLbsPerTower: 5.5 },
   green_mizuna: { expectedLbsPerTower: 3.52 },
   red_mizuna: { expectedLbsPerTower: 3.52 },
   kale: { expectedLbsPerTower: 3.52 },
@@ -180,6 +184,7 @@ const CROP_PROFILES: Record<
   romaine: { expectedLbsPerTower: 3.52 },
   swiss_chard: { expectedLbsPerTower: 3.52 },
   mizuna: { expectedLbsPerTower: 3.52 },
+  wildfire: { expectedLbsPerTower: 5.5 },
 };
 const normalizeCropKey = (crop: string = "") =>
   crop
@@ -491,7 +496,6 @@ export default function App() {
   const [productionInventory, setProductionInventory] = useState<ProductionInventoryRow[]>([]);
 
   const [message, setMessage] = useState("");
-  const ordersSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Quick Action form
   const [mode, setMode] = useState("Harvest");
@@ -529,6 +533,8 @@ export default function App() {
   const [savedOrderStatusFilter, setSavedOrderStatusFilter] = useState("All");
   const [savedOrderCropFilter, setSavedOrderCropFilter] = useState("All");
   const [savedOrderCustomerFilter, setSavedOrderCustomerFilter] = useState("All");
+  const [savedOrderDueFilter, setSavedOrderDueFilter] = useState<"All" | "Current Week">("All");
+  const [expandedSavedOrderGroups, setExpandedSavedOrderGroups] = useState<Record<string, boolean>>({});
 
   // Production Inventory form
   const [inventoryTower, setInventoryTower] = useState("");
@@ -585,7 +591,7 @@ export default function App() {
   const [harvestNote, setHarvestNote] = useState("");
   const [staffLookupCrop, setStaffLookupCrop] = useState("");
   const [quickEntryUnitType, setQuickEntryUnitType] = useState<OrderUnitType>("Lbs");
-  const [quickHarvestType, setQuickHarvestType] = useState<"Full Harvest" | "Trim Harvest">("Full Harvest");
+  const [seedScheduleFilter, setSeedScheduleFilter] = useState<"Today" | "This Week" | "This Month">("Today");
 
   // Transplant form
   const [transplantRowNumber, setTransplantRowNumber] = useState("");
@@ -847,13 +853,51 @@ export default function App() {
   }, [staffRows, filterMode, filterCrop, filterTower]);
 
   const filteredSavedOrders = useMemo(() => {
+    const now = new Date();
+    const weekStart = getStartOfWeek(now);
+    const weekEnd = getEndOfWeek(now);
+
     return salesOrders
-      .filter((row) => normalizeStatus(getOrderStatus(row)) !== "cancelled")
+      .filter((row) => {
+        const status = normalizeStatus(getOrderStatus(row));
+        return !["completed", "cancelled"].includes(status);
+      })
       .filter((row) => (savedOrderStatusFilter === "All" ? true : getOrderStatus(row) === savedOrderStatusFilter))
       .filter((row) => (savedOrderCropFilter === "All" ? true : getOrderCrop(row) === savedOrderCropFilter))
       .filter((row) => (savedOrderCustomerFilter === "All" ? true : getOrderCustomer(row) === savedOrderCustomerFilter))
+      .filter((row) => {
+        if (savedOrderDueFilter !== "Current Week") return true;
+        const dueDate = getOrderRequestedDeliveryDate(row);
+        if (!dueDate) return false;
+        const due = new Date(dueDate);
+        return due >= weekStart && due <= weekEnd;
+      })
       .sort((a, b) => new Date(getOrderRequestedDeliveryDate(a)).getTime() - new Date(getOrderRequestedDeliveryDate(b)).getTime());
-  }, [salesOrders, savedOrderStatusFilter, savedOrderCropFilter, savedOrderCustomerFilter]);
+  }, [salesOrders, savedOrderStatusFilter, savedOrderCropFilter, savedOrderCustomerFilter, savedOrderDueFilter]);
+
+
+  const groupedSavedOrders = useMemo(() => {
+    const groups = new Map<string, { key: string; customer: string; dueDate: string; status: string; items: SalesOrderRow[]; totalNewTowers: number }>();
+
+    filteredSavedOrders.forEach((order) => {
+      const customer = getOrderCustomer(order) || "Unknown Customer";
+      const dueDate = getOrderRequestedDeliveryDate(order) || "";
+      const key = `${customer}__${dueDate}`;
+      const current = groups.get(key) || {
+        key,
+        customer,
+        dueDate,
+        status: getOrderStatus(order) || "Planned",
+        items: [],
+        totalNewTowers: 0,
+      };
+      current.items.push(order);
+      current.totalNewTowers += toNumber(getOrderNewTowersToPlant(order));
+      groups.set(key, current);
+    });
+
+    return Array.from(groups.values()).sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
+  }, [filteredSavedOrders]);
 
  const seededInventory = useMemo(() => {
   return activeInventory
@@ -1019,6 +1063,31 @@ const plantTodayTasks = useMemo(() => {
     return a.crop.localeCompare(b.crop);
   });
 }, [openOrders, activeInventory, inventoryByCrop]);
+
+
+const filteredPlantTodayTasks = useMemo(() => {
+  const today = new Date(formatDateInput(new Date()));
+  const weekEnd = getEndOfWeek(today);
+  const monthEnd = new Date(today);
+  monthEnd.setMonth(monthEnd.getMonth() + 1);
+
+  const normalizeSeedDate = (seedByDate: string) => {
+    const parsed = new Date(seedByDate || today.toISOString());
+    if (parsed < today) return new Date(today);
+    return parsed;
+  };
+
+  return plantTodayTasks.filter((task) => {
+    const compareDate = normalizeSeedDate(task.seedByDate);
+    if (seedScheduleFilter === "Today") {
+      return compareDate.toDateString() === today.toDateString();
+    }
+    if (seedScheduleFilter === "This Week") {
+      return compareDate >= today && compareDate <= weekEnd;
+    }
+    return compareDate >= today && compareDate <= monthEnd;
+  });
+}, [plantTodayTasks, seedScheduleFilter]);
 
 const readyToHarvestInventory = useMemo(() => {
   const today = formatDateInput(new Date());
@@ -1454,122 +1523,6 @@ const overdueOrders = useMemo(() => {
       .slice(0, 8);
   }, [salesOrders, inventoryByCrop]);
 
-  const resetQuickActionForm = () => {
-    setTower("");
-    setCrop("");
-    setLbs("");
-    setPodsChanged("");
-    setQuickEntryUnitType("Lbs");
-    setQuickHarvestType("Full Harvest");
-    setEntryStatus("");
-    setStage("");
-    setScrapType("");
-    setNote("");
-  };
-
-  const handleQuickHarvestLikeAction = async (entryMode: "Harvest" | "Farmers Market") => {
-    if (!tower) {
-      setMessage("Please choose a tower from inventory.");
-      return;
-    }
-
-    const selected = productionInventory.find((row) => String(row.rowNumber) === String(tower));
-    if (!selected) {
-      setMessage("Selected tower was not found in production inventory.");
-      return;
-    }
-
-    const selectedCrop = getInventoryCrop(selected);
-    const outputQty = toNumber(lbs);
-    const podsWorked = toNumber(podsChanged);
-    const currentActivePods = toNumber(getInventoryActivePods(selected));
-    const currentRemainingLbs = toNumber(getInventoryRemainingExpectedLbs(selected));
-    const currentExpectedLbs = toNumber(getInventoryExpectedLbs(selected));
-    const harvestLbs = quantityToLbs(quickEntryUnitType, outputQty);
-
-    if (!outputQty || harvestLbs < 0) {
-      setMessage("Please enter harvested quantity.");
-      return;
-    }
-
-    if (!podsWorked) {
-      setMessage(quickHarvestType === "Trim Harvest" ? "Please enter how many pods were trimmed." : "Please enter how many pods were harvested.");
-      return;
-    }
-
-    if (podsWorked > currentActivePods) {
-      setMessage("You cannot harvest or trim more pods than are active.");
-      return;
-    }
-
-    if (harvestLbs > currentRemainingLbs + 0.001) {
-      setMessage("Harvested weight cannot be more than remaining harvestable pounds.");
-      return;
-    }
-
-    const isFullHarvest = quickHarvestType === "Full Harvest";
-    const newActivePods = isFullHarvest ? Math.max(0, currentActivePods - podsWorked) : currentActivePods;
-    const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - harvestLbs) * 100) / 100);
-    const isFinished = newActivePods <= 0 || newRemainingLbs <= 0.01;
-    const newStatus = isFinished ? "Harvested" : getInventoryStatus(selected) || "Active";
-    const newStage = isFinished ? "Harvested" : quickHarvestType === "Trim Harvest" ? "Trimmed" : getInventoryStage(selected) || "Ready";
-    const actionNote = [
-      quickHarvestType,
-      `${outputQty} ${getUnitLabel(quickEntryUnitType)}`,
-      isFullHarvest ? `${podsWorked} pods harvested` : `${podsWorked} pods trimmed`,
-      note,
-    ]
-      .filter(Boolean)
-      .join(" | ");
-
-    const actionResult = await postToBackend({
-      action: "saveStaffAction",
-      mode: entryMode,
-      tower: getInventoryTower(selected),
-      crop: selectedCrop,
-      lbs: harvestLbs,
-      podsChanged: isFullHarvest ? podsWorked : "",
-      status: isFinished ? "Completed" : "Partial",
-      stage: isFinished ? "Harvested" : quickHarvestType === "Trim Harvest" ? "Trimmed" : "Ready",
-      date: entryDate || formatDateInput(new Date()),
-      scrapType: "",
-      note: actionNote,
-    });
-
-    if (!actionResult.ok) {
-      setMessage(actionResult.message || `Unable to log ${entryMode.toLowerCase()} action.`);
-      return;
-    }
-
-    const updatedNotes = [getInventoryNotes(selected), actionNote].filter(Boolean).join(" | ");
-    const updateResult = await postToBackend({
-      action: "updateProductionInventoryRow",
-      rowNumber: selected.rowNumber,
-      tower: getInventoryTower(selected),
-      towerType: getInventoryTowerType(selected),
-      maxPods: toNumber(getInventoryMaxPods(selected)),
-      activePods: newActivePods,
-      crop: selectedCrop,
-      stage: newStage,
-      seededDate: getInventorySeededDate(selected),
-      transplantDate: getInventoryTransplantDate(selected),
-      estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
-      expectedLbs: currentExpectedLbs,
-      remainingExpectedLbs: newRemainingLbs,
-      status: newStatus,
-      notes: updatedNotes,
-    });
-
-    if (!updateResult.ok) {
-      setMessage(updateResult.message || "Unable to update production inventory row.");
-      return;
-    }
-
-    setMessage(isFinished ? `${entryMode} saved. That inventory row is complete and removed from Ready to Harvest.` : `${entryMode} saved.`);
-    resetQuickActionForm();
-    await Promise.all([loadProductionInventory(), loadStaffActions()]);
-  };
-
   const saveQuickAction = async () => {
     setMessage("");
 
@@ -1608,7 +1561,15 @@ const overdueOrders = useMemo(() => {
 
       if (result.ok) {
         setMessage("Saved to Staff_Actions.");
-        resetQuickActionForm();
+        setTower("");
+        setCrop("");
+        setLbs("");
+        setPodsChanged("");
+        setQuickEntryUnitType("Lbs");
+        setEntryStatus("");
+        setStage("");
+        setScrapType("");
+        setNote("");
         await loadStaffActions();
       } else {
         setMessage(result.message || "Unable to save entry.");
@@ -1652,7 +1613,6 @@ const overdueOrders = useMemo(() => {
     setSalesContractStartDate(formatDateInput(order.contractStartDate || order["Contract Start Date"] || ""));
     setSalesContractEndDate(formatDateInput(order.contractEndDate || order["Contract End Date"] || ""));
     setSalesSaveMessage(`Editing order #${order.rowNumber}`);
-    setTimeout(() => ordersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
   const cancelEditSalesOrder = () => {
@@ -2548,68 +2508,54 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
   return (
     <div style={pageStyle}>
-      <style>{`
-        .app-btn { transition: transform 0.08s ease, filter 0.15s ease, box-shadow 0.15s ease; }
-        .app-btn:hover { filter: brightness(0.98); }
-        .app-btn:active { transform: scale(0.98); filter: brightness(0.92); }
-        .app-btn:disabled { opacity: 0.65; cursor: not-allowed; }
-      `}</style>
       <div style={containerStyle}>
-     <header
-  style={{
-    ...headerStyle,
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 16,
-    flexWrap: "wrap",
-  }}
->
-  <div
-    style={{
-      flex: "0 0 auto",
-      display: "flex",
-      alignItems: "flex-start",
-      justifyContent: "flex-start",
-    }}
-  >
-    <img
-      src="/gardennobkgd.png"
-      alt="Switchpoint Garden"
-      style={{
-        height: 112,
-        width: "auto",
-        display: "block",
-        maxWidth: "100%",
-        objectFit: "contain",
-      }}
-    />
-  </div>
-
-  <div style={{ minWidth: 0, flex: "1 1 420px" }}>
-    <h1 style={{ margin: 0, fontSize: "clamp(24px, 4vw, 34px)", lineHeight: 1.15 }}>
-      Switchpoint Greenhouse Dashboard
-    </h1>
-    <p style={{ margin: "10px 0 0 0", opacity: 0.9, fontSize: 15 }}>
-      Mobile-friendly operations build for dashboard, production inventory, and staff daily tasks.
-    </p>
-  </div>
-</header>
+        <header
+          style={{
+            ...headerStyle,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 18, minWidth: 0, flex: "1 1 420px" }}>
+            <img
+              src="/gardennobkgd.png"
+              alt="Switchpoint Garden"
+              style={{
+                height: 112,
+                width: "auto",
+                display: "block",
+                maxWidth: "100%",
+                objectFit: "contain",
+              }}
+            />
+            <div style={{ minWidth: 0 }}>
+              <h1 style={{ margin: 0, fontSize: "clamp(24px, 4vw, 34px)", lineHeight: 1.15 }}>
+                Switchpoint Greenhouse Dashboard
+              </h1>
+              <p style={{ margin: "10px 0 0 0", opacity: 0.9, fontSize: 15 }}>
+                Mobile-friendly operations build for dashboard, production inventory, and staff daily tasks.
+              </p>
+            </div>
+          </div>
+        </header>
 
         <div style={navWrapStyle}>
           <div style={navButtonsStyle}>
-            <button className="app-btn" onClick={() => setActivePage("dashboard")} style={activePage === "dashboard" ? navButtonActiveStyle : navButtonStyle}>
+            <button onClick={() => setActivePage("dashboard")} style={activePage === "dashboard" ? navButtonActiveStyle : navButtonStyle}>
               Dashboard
             </button>
-            <button className="app-btn" onClick={() => setActivePage("inventory")} style={activePage === "inventory" ? navButtonActiveStyle : navButtonStyle}>
+            <button onClick={() => setActivePage("inventory")} style={activePage === "inventory" ? navButtonActiveStyle : navButtonStyle}>
               Production Inventory
             </button>
-            <button className="app-btn" onClick={() => setActivePage("staffDaily")} style={activePage === "staffDaily" ? navButtonActiveStyle : navButtonStyle}>
+            <button onClick={() => setActivePage("staffDaily")} style={activePage === "staffDaily" ? navButtonActiveStyle : navButtonStyle}>
               Staff Daily
             </button>
           </div>
 
-          <button className="app-btn" onClick={loadAllData} style={secondaryButtonStyle}>
+          <button onClick={loadAllData} style={secondaryButtonStyle}>
             {loadingData ? "Refreshing..." : "Refresh Data"}
           </button>
         </div>
@@ -2735,7 +2681,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 </TableScroll>
               </Panel>
 
-              <div ref={ordersSectionRef}><Panel title="Sales Planner / Order Planner">
+              <Panel title="Sales Planner / Order Planner">
                 <FormGrid columns={2}>
                   <Field label="Customer">
                     <input value={salesCustomer} onChange={(e) => setSalesCustomer(e.target.value)} style={inputStyle} />
@@ -2765,6 +2711,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                       <option value="Plants">Plants</option>
                       <option value="6oz Bag">6oz Bag</option>
                       <option value="6oz Clamshell">6oz Clamshell</option>
+                      <option value="0.75oz Small Bag">0.75oz Small Bag</option>
                     </select>
                   </Field>
 
@@ -2814,12 +2761,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
                   {!editingSalesOrderRowNumber && (
-                    <button className="app-btn" onClick={addCurrentLineToBatch} style={secondaryButtonStyle}>
+                    <button onClick={addCurrentLineToBatch} style={secondaryButtonStyle}>
                       Add Line Item
                     </button>
                   )}
                   {editingSalesOrderRowNumber ? (
-                    <button className="app-btn" onClick={cancelEditSalesOrder} style={secondaryButtonStyle}>
+                    <button onClick={cancelEditSalesOrder} style={secondaryButtonStyle}>
                       Cancel Edit
                     </button>
                   ) : null}
@@ -2846,7 +2793,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                             <td style={tdStyle}>{quantityToLbs(line.unitType, toNumber(line.quantityNeeded))}</td>
                             {!editingSalesOrderRowNumber && (
                               <td style={tdStyle}>
-                                <button className="app-btn" onClick={() => removeDraftOrderLine(line.id)} style={secondaryButtonStyle}>Remove</button>
+                                <button onClick={() => removeDraftOrderLine(line.id)} style={secondaryButtonStyle}>Remove</button>
                               </td>
                             )}
                           </tr>
@@ -2857,11 +2804,11 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 )}
 
                 <ActionRow message={salesSaveMessage}>
-                  <button className="app-btn" onClick={handleSaveOrder} style={primaryButtonStyle} disabled={salesSaving}>
+                  <button onClick={handleSaveOrder} style={primaryButtonStyle} disabled={salesSaving}>
                     {salesSaving ? "Saving..." : editingSalesOrderRowNumber ? "Update Order" : "Save Order"}
                   </button>
                 </ActionRow>
-              </Panel></div>
+              </Panel>
             </ResponsiveTwoPanelGrid>
 
             <div style={sectionStackStyle}>
@@ -2943,7 +2890,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               </Panel>
 
               <Panel title="Saved Orders">
-                <FormGrid columns={3}>
+                <FormGrid columns={4}>
                   <Field label="Status Filter">
                     <select value={savedOrderStatusFilter} onChange={(e) => setSavedOrderStatusFilter(e.target.value)} style={inputStyle}>
                       <option value="All">All</option>
@@ -2976,71 +2923,99 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                       ))}
                     </select>
                   </Field>
+
+                  <Field label="Due Filter">
+                    <select value={savedOrderDueFilter} onChange={(e) => setSavedOrderDueFilter(e.target.value as "All" | "Current Week")} style={inputStyle}>
+                      <option value="All">All</option>
+                      <option value="Current Week">Current Week</option>
+                    </select>
+                  </Field>
                 </FormGrid>
 
                 <div style={{ maxHeight: 290, overflowY: "auto", overflowX: "auto" }}>
                   <table style={tableStyle}>
                     <thead>
                       <tr>
+                        <th style={thStyle}></th>
                         <th style={thStyle}>Customer</th>
-                        <th style={thStyle}>Crop</th>
-                        <th style={thStyle}>Unit</th>
-                        <th style={thStyle}>Qty</th>
                         <th style={thStyle}>Delivery</th>
-                        <th style={thStyle}>Type</th>
+                        <th style={thStyle}>Items</th>
                         <th style={thStyle}>New Towers</th>
                         <th style={thStyle}>Status</th>
-                        <th style={thStyle}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredSavedOrders.length === 0 ? (
+                      {groupedSavedOrders.length === 0 ? (
                         <tr>
-                          <td colSpan={9} style={tdStyle}>
+                          <td colSpan={6} style={tdStyle}>
                             No saved orders.
                           </td>
                         </tr>
                       ) : (
-                        filteredSavedOrders.map((order) => (
-                          <tr key={order.rowNumber}>
-                            <td style={tdStyle}>{getOrderCustomer(order)}</td>
-                            <td style={tdStyle}>{getOrderCrop(order)}</td>
-                            <td style={tdStyle}>{getOrderUnitType(order)}</td>
-                            <td style={tdStyle}>{getOrderQuantityNeeded(order)}</td>
-                            <td style={tdStyle}>{formatDateDisplay(getOrderRequestedDeliveryDate(order))}</td>
-                            <td style={tdStyle}>
-                              {getOrderType(order)}
-                              {getOrderFrequency(order) ? ` / ${getOrderFrequency(order)}` : ""}
-                            </td>
-                            <td style={tdStyle}>{getOrderNewTowersToPlant(order)}</td>
-                            <td style={tdStyle}>
-                              <select
-                                value={getOrderStatus(order) || "Planned"}
-                                onChange={(e) => handleOrderStatusChange(order.rowNumber, e.target.value)}
-                                style={{ ...compactInputStyle, minWidth: 132 }}
-                              >
-                                <option value="Planned">Planned</option>
-                                <option value="In Progress">In Progress</option>
-                                <option value="Harvested">Harvested</option>
-                                <option value="Packed">Packed</option>
-                                <option value="Completed">Completed</option>
-                                <option value="Cancelled">Cancelled</option>
-                              </select>
-                            </td>
-                            <td style={tdStyle}>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                <button className="app-btn" onClick={() => startEditSalesOrder(order)} style={primaryButtonStyle}>Edit</button>
-                                <button className="app-btn" onClick={() => handleCancelSalesOrder(order.rowNumber)} style={secondaryButtonStyle}>Cancel</button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
+                        groupedSavedOrders.flatMap((group) => {
+                          const expanded = !!expandedSavedOrderGroups[group.key];
+                          const summaryRow = (
+                            <tr key={group.key}>
+                              <td style={tdStyle}>
+                                <button
+                                  onClick={() =>
+                                    setExpandedSavedOrderGroups((prev) => ({
+                                      ...prev,
+                                      [group.key]: !prev[group.key],
+                                    }))
+                                  }
+                                  style={{ ...secondaryButtonStyle, padding: "6px 10px", minWidth: 38 }}
+                                >
+                                  {expanded ? "▾" : "▸"}
+                                </button>
+                              </td>
+                              <td style={tdStyle}>{group.customer}</td>
+                              <td style={tdStyle}>{formatDateDisplay(group.dueDate)}</td>
+                              <td style={tdStyle}>{group.items.length}</td>
+                              <td style={tdStyle}>{group.totalNewTowers}</td>
+                              <td style={tdStyle}>{group.status}</td>
+                            </tr>
+                          );
+
+                          if (!expanded) return [summaryRow];
+
+                          const detailRows = group.items.map((order) => (
+                            <tr key={`${group.key}-${order.rowNumber}`}>
+                              <td style={tdStyle}></td>
+                              <td style={{ ...tdStyle, paddingLeft: 24 }} colSpan={2}>
+                                {getOrderCrop(order)} — {getOrderUnitType(order)} × {getOrderQuantityNeeded(order)}
+                              </td>
+                              <td style={tdStyle}>{getOrderType(order)}{getOrderFrequency(order) ? ` / ${getOrderFrequency(order)}` : ""}</td>
+                              <td style={tdStyle}>{getOrderNewTowersToPlant(order)}</td>
+                              <td style={tdStyle}>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                  <select
+                                    value={getOrderStatus(order) || "Planned"}
+                                    onChange={(e) => handleOrderStatusChange(order.rowNumber, e.target.value)}
+                                    style={compactInputStyle}
+                                  >
+                                    <option value="Planned">Planned</option>
+                                    <option value="In Progress">In Progress</option>
+                                    <option value="Harvested">Harvested</option>
+                                    <option value="Packed">Packed</option>
+                                    <option value="Completed">Completed</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                  </select>
+                                  <button onClick={() => startEditSalesOrder(order)} style={primaryButtonStyle}>Edit</button>
+                                  <button onClick={() => handleCancelSalesOrder(order.rowNumber)} style={secondaryButtonStyle}>Cancel</button>
+                                </div>
+                              </td>
+                            </tr>
+                          ));
+
+                          return [summaryRow, ...detailRows];
+                        })
                       )}
                     </tbody>
                   </table>
                 </div>
                 <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-                  Showing 5 visible rows. Scroll to see the rest.
+                  Orders marked Completed or Cancelled are removed from this section. Recurring orders stay visible for future dates until each occurrence is completed.
                 </div>
               </Panel>
             </div>
@@ -3138,7 +3113,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               </Field>
 
               <ActionRow message={inventoryMessage}>
-                <button className="app-btn" onClick={handleSaveInventory} style={primaryButtonStyle} disabled={inventorySaving}>
+                <button onClick={handleSaveInventory} style={primaryButtonStyle} disabled={inventorySaving}>
                   {inventorySaving ? "Saving..." : "Save Production Inventory"}
                 </button>
               </ActionRow>
@@ -3237,10 +3212,10 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               </Field>
 
               <ActionRow message={editInventoryMessage}>
-                <button className="app-btn" onClick={handleSaveInventoryEdits} style={primaryButtonStyle} disabled={editInventorySaving}>
+                <button onClick={handleSaveInventoryEdits} style={primaryButtonStyle} disabled={editInventorySaving}>
                   {editInventorySaving ? "Saving..." : "Save Changes"}
                 </button>
-                <button className="app-btn" onClick={clearEditInventoryForm} style={secondaryButtonStyle}>
+                <button onClick={clearEditInventoryForm} style={secondaryButtonStyle}>
                   Clear
                 </button>
               </ActionRow>
@@ -3287,15 +3262,13 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               </Field>
 
               <ActionRow message={adjustMessage}>
-                <button className="app-btn" onClick={handleInventoryAdjustment} style={primaryButtonStyle}>
+                <button onClick={handleInventoryAdjustment} style={primaryButtonStyle}>
                   Save Inventory Adjustment
                 </button>
               </ActionRow>
             </Panel>
 
             <Panel title="Current Production Inventory">
-              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>Showing 20 visible rows. Scroll to see the rest.</div>
-              <div style={{ maxHeight: 860, overflowY: "auto", overflowX: "hidden", border: "1px solid #e5e7eb", borderRadius: 10 }}>
               <TableScroll>
                 <table style={tableStyle}>
                   <thead>
@@ -3344,7 +3317,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                               <select
                                 value={getInventoryStatus(item) || "Active"}
                                 onChange={(e) => handleProductionStatusChange(item.rowNumber, e.target.value)}
-                                style={{ ...compactInputStyle, minWidth: 132 }}
+                                style={compactInputStyle}
                               >
                                 <option value="Active">Active</option>
                                 <option value="Harvested">Harvested</option>
@@ -3355,7 +3328,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                             </td>
                             <td style={tdStyle}>{getInventoryNotes(item)}</td>
                             <td style={tdStyle}>
-                              <button className="app-btn" onClick={() => handleEditInventory(item)} style={primaryButtonStyle}>
+                              <button onClick={() => handleEditInventory(item)} style={primaryButtonStyle}>
                                 Edit
                               </button>
                             </td>
@@ -3365,7 +3338,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   </tbody>
                 </table>
               </TableScroll>
-              </div>
             </Panel>
           </div>
         )}
@@ -3422,38 +3394,13 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                       <option value="Scrapped">Scrapped</option>
                       <option value="Seed">Seed</option>
                       <option value="Transplant">Transplant</option>
+                      <option value="Pack">Pack</option>
                     </select>
                   </Field>
 
-                  {mode !== "Seed" ? (
-                    <Field label="Tower">
-                      <select
-                        value={tower}
-                        onChange={(e) => {
-                          const selectedRow = productionInventory.find((row) => String(row.rowNumber) === e.target.value);
-                          setTower(e.target.value);
-                          if (selectedRow) {
-                            setCrop(getInventoryCrop(selectedRow));
-                            if (mode === "Harvest" || mode === "Farmers Market") {
-                              setQuickHarvestType(isRepeatHarvestCrop(getInventoryCrop(selectedRow)) ? "Trim Harvest" : "Full Harvest");
-                            }
-                          }
-                        }}
-                        style={inputStyle}
-                      >
-                        <option value="">Select Tower From Inventory</option>
-                        {productionInventory.slice().sort(sortInventoryByTowerLayout).map((item) => (
-                          <option key={item.rowNumber} value={String(item.rowNumber)}>
-                            {getInventoryTower(item)} - {getInventoryCrop(item)}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                  ) : (
-                    <Field label="Seeded Date">
-                      <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
-                    </Field>
-                  )}
+                  <Field label="Tower">
+                    <input value={tower} onChange={(e) => setTower(e.target.value)} style={inputStyle} placeholder="R1" />
+                  </Field>
 
                   <Field label="Crop">
                     <select value={crop} onChange={(e) => setCrop(e.target.value)} style={inputStyle}>
@@ -3466,85 +3413,39 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     </select>
                   </Field>
 
-                  {(mode === "Harvest" || mode === "Farmers Market") ? (
-                    <>
-                      <Field label="Harvest Type">
-                        <select value={quickHarvestType} onChange={(e) => setQuickHarvestType(e.target.value as "Full Harvest" | "Trim Harvest")} style={inputStyle}>
-                          <option value="Full Harvest">Full Harvest</option>
-                          <option value="Trim Harvest">Trim Harvest</option>
-                        </select>
-                      </Field>
+                  <Field label={quickEntryUnitType === "Plants" ? "Plants / Pods" : quickEntryUnitType === "Lbs" ? "Lbs" : `Qty (${quickEntryUnitType})`}>
+                    <input value={lbs} onChange={(e) => setLbs(e.target.value)} style={inputStyle} placeholder="12" />
+                  </Field>
 
-                      <Field label={quickHarvestType === "Trim Harvest" ? "Pods Trimmed" : "Pods Harvested"}>
-                        <input value={podsChanged} onChange={(e) => setPodsChanged(e.target.value)} style={inputStyle} placeholder="20" />
-                      </Field>
+                  <Field label="Entry Unit">
+                    <select value={quickEntryUnitType} onChange={(e) => setQuickEntryUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
+                      <option value="Lbs">Lbs</option>
+                      <option value="Plants">Plants</option>
+                      <option value="6oz Bag">6oz Bag</option>
+                      <option value="6oz Clamshell">6oz Clamshell</option>
+                      <option value="0.75oz Small Bag">0.75oz Small Bag</option>
+                    </select>
+                  </Field>
 
-                      <Field label="Output Unit">
-                        <select value={quickEntryUnitType} onChange={(e) => setQuickEntryUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
-                          <option value="Lbs">Lbs</option>
-                          <option value="6oz Bag">6oz Bag</option>
-                          <option value="6oz Clamshell">6oz Clamshell</option>
-                        </select>
-                      </Field>
+                  <Field label="Pods Changed">
+                    <input value={podsChanged} onChange={(e) => setPodsChanged(e.target.value)} style={inputStyle} placeholder="20" />
+                  </Field>
 
-                      <Field label="Harvested Qty">
-                        <input value={lbs} onChange={(e) => setLbs(e.target.value)} style={inputStyle} placeholder="12" />
-                      </Field>
+                  <Field label="Status">
+                    <input value={entryStatus} onChange={(e) => setEntryStatus(e.target.value)} style={inputStyle} placeholder="Completed" />
+                  </Field>
 
-                      <Field label="Harvested Lbs">
-                        <input value={String(quantityToLbs(quickEntryUnitType, toNumber(lbs)))} readOnly style={{ ...inputStyle, background: "#f1f5f9" }} />
-                      </Field>
+                  <Field label="Stage">
+                    <input value={stage} onChange={(e) => setStage(e.target.value)} style={inputStyle} placeholder="Growing / Ready" />
+                  </Field>
 
-                      <Field label="Date">
-                        <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
-                      </Field>
-                    </>
-                  ) : mode === "Scrapped" ? (
-                    <>
-                      <Field label={quickEntryUnitType === "Plants" ? "Plants / Pods" : quickEntryUnitType === "Lbs" ? "Lbs" : `Qty (${quickEntryUnitType})`}>
-                        <input value={lbs} onChange={(e) => setLbs(e.target.value)} style={inputStyle} placeholder="12" />
-                      </Field>
+                  <Field label="Date">
+                    <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
+                  </Field>
 
-                      <Field label="Entry Unit">
-                        <select value={quickEntryUnitType} onChange={(e) => setQuickEntryUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
-                          <option value="Lbs">Lbs</option>
-                          <option value="Plants">Plants</option>
-                          <option value="6oz Bag">6oz Bag</option>
-                          <option value="6oz Clamshell">6oz Clamshell</option>
-                        </select>
-                      </Field>
-
-                      <Field label="Pods Changed">
-                        <input value={podsChanged} onChange={(e) => setPodsChanged(e.target.value)} style={inputStyle} placeholder="20" />
-                      </Field>
-
-                      <Field label="Date">
-                        <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
-                      </Field>
-
-                      <Field label="Scrap Type">
-                        <input value={scrapType} onChange={(e) => setScrapType(e.target.value)} style={inputStyle} placeholder="Disease / Damage" />
-                      </Field>
-                    </>
-                  ) : (
-                    <>
-                      <Field label="Status">
-                        <input value={entryStatus} onChange={(e) => setEntryStatus(e.target.value)} style={inputStyle} placeholder="Completed" />
-                      </Field>
-
-                      <Field label="Stage">
-                        <input value={stage} onChange={(e) => setStage(e.target.value)} style={inputStyle} placeholder="Growing / Ready" />
-                      </Field>
-
-                      <Field label="Date">
-                        <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
-                      </Field>
-
-                      <Field label="Scrap Type">
-                        <input value={scrapType} onChange={(e) => setScrapType(e.target.value)} style={inputStyle} placeholder="Disease / Damage" />
-                      </Field>
-                    </>
-                  )}
+                  <Field label="Scrap Type">
+                    <input value={scrapType} onChange={(e) => setScrapType(e.target.value)} style={inputStyle} placeholder="Disease / Damage" />
+                  </Field>
                 </FormGrid>
 
                 <Field label="Note">
@@ -3552,7 +3453,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 </Field>
 
                 <ActionRow message={message}>
-                  <button className="app-btn" onClick={saveQuickAction} style={primaryButtonStyle}>
+                  <button onClick={saveQuickAction} style={primaryButtonStyle}>
                     Save to Staff_Actions
                   </button>
                 </ActionRow>
@@ -3560,6 +3461,14 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
 
     <Panel title="Seed Today / Seeding Schedule">
+      <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 13, color: "#64748b" }}>Default view shows what needs to be seeded today.</div>
+        <select value={seedScheduleFilter} onChange={(e) => setSeedScheduleFilter(e.target.value as "Today" | "This Week" | "This Month")} style={{ ...inputStyle, width: 180 }}>
+          <option value="Today">Today</option>
+          <option value="This Week">This Week</option>
+          <option value="This Month">This Month</option>
+        </select>
+      </div>
       <TableScroll>
         <table style={tableStyle}>
           <thead>
@@ -3579,16 +3488,18 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             </tr>
           </thead>
           <tbody>
-            {plantTodayTasks.length === 0 ? (
+            {filteredPlantTodayTasks.length === 0 ? (
               <tr>
                 <td colSpan={12} style={tdStyle}>
                   No seeding tasks right now.
                 </td>
               </tr>
             ) : (
-              plantTodayTasks.map((task) => (
+              filteredPlantTodayTasks.map((task) => {
+                const displaySeedByDate = task.seedByDate && task.seedByDate < formatDateInput(new Date()) ? formatDateInput(new Date()) : task.seedByDate;
+                return (
                 <tr key={`${task.seedByDate}-${task.crop}`}>
-                  <td style={tdStyle}>{formatDateDisplay(task.seedByDate)}</td>
+                  <td style={tdStyle}>{formatDateDisplay(displaySeedByDate)}</td>
                   <td style={tdStyle}>{task.urgency}</td>
                   <td style={tdStyle}>{task.crop}</td>
                   <td style={tdStyle}>{task.totalTowers}</td>
@@ -3614,12 +3525,13 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     </select>
                   </td>
                   <td style={tdStyle}>
-                    <button className="app-btn" onClick={() => handleMarkPlanted(task)} style={primaryButtonStyle}>
+                    <button onClick={() => handleMarkPlanted(task)} style={primaryButtonStyle}>
                       Mark Planted
                     </button>
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>
@@ -3744,7 +3656,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       </Field>
 
       <ActionRow message={dailyMessage}>
-        <button className="app-btn" onClick={handleMarkTransplanted} style={primaryButtonStyle}>
+        <button onClick={handleMarkTransplanted} style={primaryButtonStyle}>
           Mark Transplanted
         </button>
       </ActionRow>
@@ -3787,7 +3699,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                         <td style={tdStyle}>{getInventoryRemainingExpectedLbs(item)}</td>
                         <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
                         <td style={tdStyle}>
-                          <button className="app-btn" onClick={() => startReadyHarvestAction(item)} style={primaryButtonStyle}>
+                          <button onClick={() => startReadyHarvestAction(item)} style={primaryButtonStyle}>
                             Mark Harvested
                           </button>
                         </td>
@@ -3810,6 +3722,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                                   <option value="Lbs">Lbs</option>
                                   <option value="6oz Bag">6oz Bag</option>
                                   <option value="6oz Clamshell">6oz Clamshell</option>
+                      <option value="0.75oz Small Bag">0.75oz Small Bag</option>
                                 </select>
                               </Field>
                               <Field label="Harvested Qty">
@@ -3823,8 +3736,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                               <input value={harvestNote} onChange={(e) => setHarvestNote(e.target.value)} style={compactInputStyle} />
                             </Field>
                             <ActionRow message={dailyMessage}>
-                              <button className="app-btn" onClick={handleReadyHarvestSubmit} style={primaryButtonStyle}>Save Harvest</button>
-                              <button className="app-btn" onClick={clearReadyHarvestAction} style={secondaryButtonStyle}>Cancel</button>
+                              <button onClick={handleReadyHarvestSubmit} style={primaryButtonStyle}>Save Harvest</button>
+                              <button onClick={clearReadyHarvestAction} style={secondaryButtonStyle}>Cancel</button>
                             </ActionRow>
                           </td>
                         </tr>
@@ -3871,7 +3784,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   <td style={tdStyle}>{formatDateDisplay(task.dueDate)}</td>
                   <td style={tdStyle}>{task.status}</td>
                   <td style={tdStyle}>
-                    <button className="app-btn" onClick={() => handleMarkPacked(task)} style={primaryButtonStyle}>
+                    <button onClick={() => handleMarkPacked(task)} style={primaryButtonStyle}>
                       Mark Packed
                     </button>
                   </td>
