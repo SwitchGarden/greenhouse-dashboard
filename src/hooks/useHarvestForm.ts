@@ -21,10 +21,12 @@ const initialState: HarvestFormState = {
   note: "",
 };
 
-type Action =
+export type HarvestFormAction =
   | { type: "START"; item: ProductionInventoryRow }
   | { type: "SET_FIELD"; field: keyof HarvestFormState; value: string }
   | { type: "CLEAR" };
+
+type Action = HarvestFormAction;
 
 function reducer(state: HarvestFormState, action: Action): HarvestFormState {
   switch (action.type) {

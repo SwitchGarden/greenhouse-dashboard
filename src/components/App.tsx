@@ -90,6 +90,18 @@ import {
 import { postToBackend } from "../lib/api";
 import { buildCropPools, allocateOrderAgainstPool } from "../lib/utils/demandUtils";
 import {
+  Panel,
+  Field,
+  ActionRow,
+  TableScroll,
+  StatCard,
+  MiniMetric,
+  ResponsiveStatGrid,
+  ResponsiveTwoPanelGrid,
+  FormGrid,
+  MetricGrid,
+} from "./ui";
+import {
   pageStyle,
   containerStyle,
   headerStyle,
@@ -100,11 +112,6 @@ import {
   primaryButtonStyle,
   secondaryButtonStyle,
   sectionStackStyle,
-  responsiveStatGridStyle,
-  responsiveTwoPanelGridStyle,
-  panelStyle,
-  statCardStyle,
-  miniMetricStyle,
   inputStyle,
   compactInputStyle,
   textareaStyle,
@@ -3310,99 +3317,4 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section style={panelStyle}>
-      <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: "clamp(18px, 3vw, 22px)", lineHeight: 1.2 }}>{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: "block", minWidth: 0 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{label}</div>
-      {children}
-    </label>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div style={statCardStyle}>
-      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>{label}</div>
-      <div style={{ fontSize: "clamp(24px, 4vw, 30px)", fontWeight: 700 }}>{value}</div>
-    </div>
-  );
-}
-
-function MiniMetric({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div style={miniMetricStyle}>
-      <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, wordBreak: "break-word" }}>{value}</div>
-    </div>
-  );
-}
-
-function TableScroll({ children }: { children: React.ReactNode }) {
-  return <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>{children}</div>;
-}
-
-function ActionRow({ children, message }: { children: React.ReactNode; message: string }) {
-  return (
-    <div
-      style={{
-        marginTop: 16,
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 12,
-        alignItems: "center",
-      }}
-    >
-      {children}
-      <span style={{ fontSize: 14, color: "#334155", wordBreak: "break-word" }}>{message}</span>
-    </div>
-  );
-}
-
-function ResponsiveStatGrid({ children }: { children: React.ReactNode }) {
-  return <div style={responsiveStatGridStyle}>{children}</div>;
-}
-
-function ResponsiveTwoPanelGrid({ children }: { children: React.ReactNode }) {
-  return <div style={responsiveTwoPanelGridStyle}>{children}</div>;
-}
-
-function FormGrid({ children, columns = 2 }: { children: React.ReactNode; columns?: 1 | 2 | 3 }) {
-  const minWidth = columns === 3 ? 180 : columns === 2 ? 220 : 320;
-
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: `repeat(auto-fit, minmax(${minWidth}px, 1fr))`,
-        gap: 12,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function MetricGrid({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-        gap: 12,
-        marginTop: 12,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
 

@@ -56,12 +56,14 @@ const initialState: EditInventoryFormState = {
   saving: false,
 };
 
-type Action =
+export type EditInventoryFormAction =
   | { type: "SET_FIELD"; field: keyof EditInventoryFormState; value: string | boolean }
   | { type: "SET_TOWER_TYPE"; towerType: string }
   | { type: "SET_SEEDED_DATE"; seededDate: string }
   | { type: "LOAD"; item: ProductionInventoryRow }
   | { type: "RESET" };
+
+type Action = EditInventoryFormAction;
 
 function reducer(state: EditInventoryFormState, action: Action): EditInventoryFormState {
   switch (action.type) {

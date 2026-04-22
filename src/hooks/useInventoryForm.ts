@@ -39,12 +39,14 @@ const initialState: InventoryFormState = {
   saving: false,
 };
 
-type Action =
+export type InventoryFormAction =
   | { type: "SET_FIELD"; field: keyof InventoryFormState; value: string | boolean }
   | { type: "SET_TOWER_TYPE"; towerType: string }
   | { type: "SET_CROP_OR_PODS"; crop?: string; activePods?: string; towerType?: string }
   | { type: "SET_SEEDED_DATE"; seededDate: string }
   | { type: "RESET" };
+
+type Action = InventoryFormAction;
 
 function reducer(state: InventoryFormState, action: Action): InventoryFormState {
   switch (action.type) {
