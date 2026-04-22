@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useInventoryForm } from "../hooks/useInventoryForm";
+import { useEditInventoryForm } from "../hooks/useEditInventoryForm";
+import { useHarvestForm } from "../hooks/useHarvestForm";
 import type {
   PageKey,
   StaffActionRow,
@@ -158,22 +161,8 @@ export default function App() {
   const [savedOrderDueFilter, setSavedOrderDueFilter] = useState<"All" | "Current Week">("All");
   const [expandedSavedOrderGroups, setExpandedSavedOrderGroups] = useState<Record<string, boolean>>({});
 
-  // Production Inventory form
-  const [inventoryTower, setInventoryTower] = useState("");
-  const [inventoryTowerType, setInventoryTowerType] = useState("Low Density");
-  const [inventoryMaxPods, setInventoryMaxPods] = useState(String(getTowerMaxPods("Low Density")));
-  const [inventoryActivePods, setInventoryActivePods] = useState(String(getTowerMaxPods("Low Density")));
-  const [inventoryCrop, setInventoryCrop] = useState("");
-  const [inventoryStage, setInventoryStage] = useState("Growing");
-  const [inventorySeededDate, setInventorySeededDate] = useState("");
-  const [inventoryTransplantDate, setInventoryTransplantDate] = useState("");
-  const [inventoryEstimatedReadyDate, setInventoryEstimatedReadyDate] = useState("");
-  const [inventoryExpectedLbs, setInventoryExpectedLbs] = useState("");
-  const [inventoryRemainingExpectedLbs, setInventoryRemainingExpectedLbs] = useState("");
-  const [inventoryStatus, setInventoryStatus] = useState("Active");
-  const [inventoryNotes, setInventoryNotes] = useState("");
-  const [inventoryMessage, setInventoryMessage] = useState("");
-  const [inventorySaving, setInventorySaving] = useState(false);
+  // Production Inventory form (useReducer)
+  const [inventoryForm, dispatchInventory] = useInventoryForm();
 
   // Inventory adjustment
   const [adjustInventoryRow, setAdjustInventoryRow] = useState("");
@@ -184,33 +173,14 @@ export default function App() {
   const [adjustScrapType, setAdjustScrapType] = useState("");
   const [adjustMessage, setAdjustMessage] = useState("");
 
-  // Edit inventory
-  const [editingInventoryRowNumber, setEditingInventoryRowNumber] = useState("");
-  const [editInventoryTower, setEditInventoryTower] = useState("");
-  const [editInventoryTowerType, setEditInventoryTowerType] = useState("Low Density");
-  const [editInventoryMaxPods, setEditInventoryMaxPods] = useState("");
-  const [editInventoryActivePods, setEditInventoryActivePods] = useState("");
-  const [editInventoryCrop, setEditInventoryCrop] = useState("");
-  const [editInventoryStage, setEditInventoryStage] = useState("Growing");
-  const [editInventorySeededDate, setEditInventorySeededDate] = useState("");
-  const [editInventoryTransplantDate, setEditInventoryTransplantDate] = useState("");
-  const [editInventoryEstimatedReadyDate, setEditInventoryEstimatedReadyDate] = useState("");
-  const [editInventoryExpectedLbs, setEditInventoryExpectedLbs] = useState("");
-  const [editInventoryRemainingExpectedLbs, setEditInventoryRemainingExpectedLbs] = useState("");
-  const [editInventoryStatus, setEditInventoryStatus] = useState("Active");
-  const [editInventoryNotes, setEditInventoryNotes] = useState("");
-  const [editInventoryMessage, setEditInventoryMessage] = useState("");
-  const [editInventorySaving, setEditInventorySaving] = useState(false);
+  // Edit inventory (useReducer)
+  const [editInventoryForm, dispatchEditInventory] = useEditInventoryForm();
 
   // Staff Daily action helpers
   const [dailyMessage, setDailyMessage] = useState("");
   const [plantingTowerType, setPlantingTowerType] = useState<Record<string, string>>({});
-  const [activeHarvestRowNumber, setActiveHarvestRowNumber] = useState("");
-  const [harvestActionType, setHarvestActionType] = useState<"Full Harvest" | "Trim Harvest">("Full Harvest");
-  const [harvestPodsValue, setHarvestPodsValue] = useState("");
-  const [harvestOutputUnit, setHarvestOutputUnit] = useState<OrderUnitType>("Lbs");
-  const [harvestOutputQty, setHarvestOutputQty] = useState("");
-  const [harvestNote, setHarvestNote] = useState("");
+  // Harvest form (useReducer)
+  const [harvestForm, dispatchHarvest] = useHarvestForm();
   const [staffLookupCrop, setStaffLookupCrop] = useState("");
   const [quickEntryUnitType, setQuickEntryUnitType] = useState<OrderUnitType>("Lbs");
   const [seedScheduleFilter, setSeedScheduleFilter] = useState<"Today" | "This Week" | "This Month">("Today");
@@ -229,37 +199,6 @@ export default function App() {
     loadAllData();
   }, []);
 
-  useEffect(() => {
-    const max = getTowerMaxPods(inventoryTowerType);
-    setInventoryMaxPods(String(max));
-    if (!inventoryActivePods || Number(inventoryActivePods) > max) {
-      setInventoryActivePods(String(max));
-    }
-  }, [inventoryTowerType]);
-
-  useEffect(() => {
-    if (inventoryCrop) {
-     const expected = calculateExpectedLbs(
-  inventoryCrop,
-  toNumber(inventoryActivePods),
-  inventoryTowerType
-);
-      setInventoryExpectedLbs(String(expected));
-      setInventoryRemainingExpectedLbs(String(expected));
-    }
- }, [inventoryCrop, inventoryActivePods, inventoryTowerType]);
-
-  useEffect(() => {
-    if (inventorySeededDate && !inventoryEstimatedReadyDate) {
-      setInventoryEstimatedReadyDate(addDays(inventorySeededDate, 42));
-    }
-  }, [inventorySeededDate, inventoryEstimatedReadyDate]);
-
-  useEffect(() => {
-    if (editInventorySeededDate && !editInventoryEstimatedReadyDate) {
-      setEditInventoryEstimatedReadyDate(addDays(editInventorySeededDate, 42));
-    }
-  }, [editInventorySeededDate, editInventoryEstimatedReadyDate]);
 
   useEffect(() => {
     const max = getTowerMaxPods(transplantTowerType);
@@ -1430,63 +1369,51 @@ const overdueOrders = useMemo(() => {
   };
 
   const handleSaveInventory = async () => {
-    if (!inventoryTower || !inventoryCrop) {
-      setInventoryMessage("Please enter tower and crop.");
+    if (!inventoryForm.tower || !inventoryForm.crop) {
+      dispatchInventory({ type: "SET_FIELD", field: "message", value: "Please enter tower and crop." });
       return;
     }
 
     try {
-      setInventorySaving(true);
-      setInventoryMessage("");
+      dispatchInventory({ type: "SET_FIELD", field: "saving", value: true });
+      dispatchInventory({ type: "SET_FIELD", field: "message", value: "" });
 
-      const maxPods = toNumber(inventoryMaxPods) || getTowerMaxPods(inventoryTowerType);
-      const activePods = toNumber(inventoryActivePods) || maxPods;
-      const expectedLbs = inventoryExpectedLbs
-  ? Number(inventoryExpectedLbs)
-  : calculateExpectedLbs(inventoryCrop, activePods, inventoryTowerType);
-      const remainingExpectedLbs = inventoryRemainingExpectedLbs ? Number(inventoryRemainingExpectedLbs) : expectedLbs;
+      const maxPods = toNumber(inventoryForm.maxPods) || getTowerMaxPods(inventoryForm.towerType);
+      const activePods = toNumber(inventoryForm.activePods) || maxPods;
+      const expectedLbs = inventoryForm.expectedLbs
+        ? Number(inventoryForm.expectedLbs)
+        : calculateExpectedLbs(inventoryForm.crop, activePods, inventoryForm.towerType);
+      const remainingExpectedLbs = inventoryForm.remainingExpectedLbs ? Number(inventoryForm.remainingExpectedLbs) : expectedLbs;
 
       const result = await postToBackend({
         action: "saveProductionInventory",
-        tower: inventoryTower,
-        towerType: inventoryTowerType,
+        tower: inventoryForm.tower,
+        towerType: inventoryForm.towerType,
         maxPods,
         activePods,
-        crop: inventoryCrop,
-        stage: inventoryStage,
-        seededDate: inventorySeededDate,
-        transplantDate: inventoryTransplantDate,
-        estimatedReadyDate: inventoryEstimatedReadyDate,
+        crop: inventoryForm.crop,
+        stage: inventoryForm.stage,
+        seededDate: inventoryForm.seededDate,
+        transplantDate: inventoryForm.transplantDate,
+        estimatedReadyDate: inventoryForm.estimatedReadyDate,
         expectedLbs,
         remainingExpectedLbs,
-        status: inventoryStatus,
-        notes: inventoryNotes,
+        status: inventoryForm.status,
+        notes: inventoryForm.notes,
       });
 
       if (result.ok) {
-        setInventoryMessage("Production inventory saved.");
-        setInventoryTower("");
-        setInventoryTowerType("Low Density");
-        setInventoryMaxPods(String(getTowerMaxPods("Low Density")));
-        setInventoryActivePods(String(getTowerMaxPods("Low Density")));
-        setInventoryCrop("");
-        setInventoryStage("Growing");
-        setInventorySeededDate("");
-        setInventoryTransplantDate("");
-        setInventoryEstimatedReadyDate("");
-        setInventoryExpectedLbs("");
-        setInventoryRemainingExpectedLbs("");
-        setInventoryStatus("Active");
-        setInventoryNotes("");
+        dispatchInventory({ type: "SET_FIELD", field: "message", value: "Production inventory saved." });
+        dispatchInventory({ type: "RESET" });
         await loadProductionInventory();
       } else {
-        setInventoryMessage(result.message || "Unable to save production inventory.");
+        dispatchInventory({ type: "SET_FIELD", field: "message", value: result.message || "Unable to save production inventory." });
       }
     } catch (error) {
       console.error("handleSaveInventory error:", error);
-      setInventoryMessage("Error saving production inventory.");
+      dispatchInventory({ type: "SET_FIELD", field: "message", value: "Error saving production inventory." });
     } finally {
-      setInventorySaving(false);
+      dispatchInventory({ type: "SET_FIELD", field: "saving", value: false });
     }
   };
 
@@ -1605,21 +1532,7 @@ const overdueOrders = useMemo(() => {
 
 
 const handleEditInventory = (item: ProductionInventoryRow) => {
-  setEditInventoryMessage("");
-  setEditingInventoryRowNumber(String(item.rowNumber));
-  setEditInventoryTower(getInventoryTower(item));
-  setEditInventoryTowerType(getInventoryTowerType(item) || "Low Density");
-  setEditInventoryMaxPods(String(getInventoryMaxPods(item)));
-  setEditInventoryActivePods(String(getInventoryActivePods(item)));
-  setEditInventoryCrop(getInventoryCrop(item));
-  setEditInventoryStage(getInventoryStage(item) || "Growing");
-  setEditInventorySeededDate(formatDateInput(getInventorySeededDate(item)));
-  setEditInventoryTransplantDate(formatDateInput(getInventoryTransplantDate(item)));
-  setEditInventoryEstimatedReadyDate(formatDateInput(getInventoryEffectiveReadyDate(item)));
-  setEditInventoryExpectedLbs(String(getInventoryExpectedLbs(item)));
-  setEditInventoryRemainingExpectedLbs(String(getInventoryRemainingExpectedLbs(item)));
-  setEditInventoryStatus(getInventoryStatus(item) || "Active");
-  setEditInventoryNotes(getInventoryNotes(item));
+  dispatchEditInventory({ type: "LOAD", item });
 
   setTimeout(() => {
     const editPanel = document.getElementById("edit-production-inventory");
@@ -1629,68 +1542,54 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   }, 100);
 };
   const handleSaveInventoryEdits = async () => {
-    if (!editingInventoryRowNumber) {
-      setEditInventoryMessage("No inventory row selected.");
+    if (!editInventoryForm.rowNumber) {
+      dispatchEditInventory({ type: "SET_FIELD", field: "message", value: "No inventory row selected." });
       return;
     }
 
-    if (!editInventoryTower || !editInventoryCrop) {
-      setEditInventoryMessage("Please enter tower and crop.");
+    if (!editInventoryForm.tower || !editInventoryForm.crop) {
+      dispatchEditInventory({ type: "SET_FIELD", field: "message", value: "Please enter tower and crop." });
       return;
     }
 
     try {
-      setEditInventorySaving(true);
-      setEditInventoryMessage("");
+      dispatchEditInventory({ type: "SET_FIELD", field: "saving", value: true });
+      dispatchEditInventory({ type: "SET_FIELD", field: "message", value: "" });
 
       const result = await postToBackend({
         action: "updateProductionInventoryRow",
-        rowNumber: Number(editingInventoryRowNumber),
-        tower: editInventoryTower,
-        towerType: editInventoryTowerType,
-        maxPods: toNumber(editInventoryMaxPods),
-        activePods: toNumber(editInventoryActivePods),
-        crop: editInventoryCrop,
-        stage: editInventoryStage,
-        seededDate: editInventorySeededDate,
-        transplantDate: editInventoryTransplantDate,
-        estimatedReadyDate: editInventoryEstimatedReadyDate,
-        expectedLbs: toNumber(editInventoryExpectedLbs),
-        remainingExpectedLbs: toNumber(editInventoryRemainingExpectedLbs),
-        status: editInventoryStatus,
-        notes: editInventoryNotes,
+        rowNumber: Number(editInventoryForm.rowNumber),
+        tower: editInventoryForm.tower,
+        towerType: editInventoryForm.towerType,
+        maxPods: toNumber(editInventoryForm.maxPods),
+        activePods: toNumber(editInventoryForm.activePods),
+        crop: editInventoryForm.crop,
+        stage: editInventoryForm.stage,
+        seededDate: editInventoryForm.seededDate,
+        transplantDate: editInventoryForm.transplantDate,
+        estimatedReadyDate: editInventoryForm.estimatedReadyDate,
+        expectedLbs: toNumber(editInventoryForm.expectedLbs),
+        remainingExpectedLbs: toNumber(editInventoryForm.remainingExpectedLbs),
+        status: editInventoryForm.status,
+        notes: editInventoryForm.notes,
       });
 
       if (result.ok) {
-        setEditInventoryMessage("Inventory changes saved.");
+        dispatchEditInventory({ type: "SET_FIELD", field: "message", value: "Inventory changes saved." });
         await loadProductionInventory();
       } else {
-        setEditInventoryMessage(result.message || "Unable to save inventory changes.");
+        dispatchEditInventory({ type: "SET_FIELD", field: "message", value: result.message || "Unable to save inventory changes." });
       }
     } catch (error) {
       console.error("handleSaveInventoryEdits error:", error);
-      setEditInventoryMessage("Error saving inventory changes.");
+      dispatchEditInventory({ type: "SET_FIELD", field: "message", value: "Error saving inventory changes." });
     } finally {
-      setEditInventorySaving(false);
+      dispatchEditInventory({ type: "SET_FIELD", field: "saving", value: false });
     }
   };
 
   const clearEditInventoryForm = () => {
-    setEditingInventoryRowNumber("");
-    setEditInventoryTower("");
-    setEditInventoryTowerType("Low Density");
-    setEditInventoryMaxPods("");
-    setEditInventoryActivePods("");
-    setEditInventoryCrop("");
-    setEditInventoryStage("Growing");
-    setEditInventorySeededDate("");
-    setEditInventoryTransplantDate("");
-    setEditInventoryEstimatedReadyDate("");
-    setEditInventoryExpectedLbs("");
-    setEditInventoryRemainingExpectedLbs("");
-    setEditInventoryStatus("Active");
-    setEditInventoryNotes("");
-    setEditInventoryMessage("");
+    dispatchEditInventory({ type: "RESET" });
   };
 
   const handleMarkPlanted = async (task: { crop: string; totalTowers: number; earliestDueDate: string }) => {
@@ -1934,40 +1833,29 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   };
 
   const startReadyHarvestAction = (item: ProductionInventoryRow) => {
-    const rowId = String(item.rowNumber);
-    setActiveHarvestRowNumber(rowId);
-    setHarvestActionType(isRepeatHarvestCrop(getInventoryCrop(item)) ? "Trim Harvest" : "Full Harvest");
-    setHarvestPodsValue(String(getInventoryActivePods(item) || ""));
-    setHarvestOutputUnit("Lbs");
-    setHarvestOutputQty(String(getInventoryRemainingExpectedLbs(item) || ""));
-    setHarvestNote("");
+    dispatchHarvest({ type: "START", item });
   };
 
   const clearReadyHarvestAction = () => {
-    setActiveHarvestRowNumber("");
-    setHarvestActionType("Full Harvest");
-    setHarvestPodsValue("");
-    setHarvestOutputUnit("Lbs");
-    setHarvestOutputQty("");
-    setHarvestNote("");
+    dispatchHarvest({ type: "CLEAR" });
   };
 
   const handleReadyHarvestSubmit = async () => {
     try {
       setDailyMessage("");
 
-      const selected = productionInventory.find((row) => String(row.rowNumber) === activeHarvestRowNumber);
+      const selected = productionInventory.find((row) => String(row.rowNumber) === harvestForm.activeRowNumber);
       if (!selected) {
         setDailyMessage("Please choose a ready-to-harvest row.");
         return;
       }
 
-      const outputQty = toNumber(harvestOutputQty);
-      const podsWorked = toNumber(harvestPodsValue);
+      const outputQty = toNumber(harvestForm.outputQty);
+      const podsWorked = toNumber(harvestForm.podsValue);
       const currentActivePods = toNumber(getInventoryActivePods(selected));
       const currentRemainingLbs = toNumber(getInventoryRemainingExpectedLbs(selected));
       const currentExpectedLbs = toNumber(getInventoryExpectedLbs(selected));
-      const harvestLbs = quantityToLbs(harvestOutputUnit, outputQty);
+      const harvestLbs = quantityToLbs(harvestForm.outputUnit, outputQty);
 
       if (!outputQty || harvestLbs < 0) {
         setDailyMessage("Please enter harvested quantity.");
@@ -1975,7 +1863,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       }
 
       if (!podsWorked) {
-        setDailyMessage(harvestActionType === "Trim Harvest" ? "Please enter how many pods were trimmed." : "Please enter how many pods were harvested.");
+        setDailyMessage(harvestForm.actionType === "Trim Harvest" ? "Please enter how many pods were trimmed." : "Please enter how many pods were harvested.");
         return;
       }
 
@@ -1989,17 +1877,17 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         return;
       }
 
-      const isFullHarvest = harvestActionType === "Full Harvest";
+      const isFullHarvest = harvestForm.actionType === "Full Harvest";
       const newActivePods = isFullHarvest ? Math.max(0, currentActivePods - podsWorked) : currentActivePods;
       const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - harvestLbs) * 100) / 100);
       const isFinished = newActivePods <= 0 || newRemainingLbs <= 0.01;
       const newStatus = isFinished ? "Harvested" : getInventoryStatus(selected) || "Active";
       const newStage = isFinished ? "Harvested" : getInventoryStage(selected) || "Ready";
       const actionNote = [
-        harvestActionType,
-        `${outputQty} ${getUnitLabel(harvestOutputUnit)}`,
+        harvestForm.actionType,
+        `${outputQty} ${getUnitLabel(harvestForm.outputUnit)}`,
         isFullHarvest ? `${podsWorked} pods harvested` : `${podsWorked} pods trimmed`,
-        harvestNote,
+        harvestForm.note,
       ]
         .filter(Boolean)
         .join(" | " );
@@ -2012,7 +1900,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         lbs: harvestLbs,
         podsChanged: isFullHarvest ? podsWorked : "",
         status: isFinished ? "Completed" : "Partial",
-        stage: isFinished ? "Harvested" : harvestActionType === "Trim Harvest" ? "Trimmed" : "Ready",
+        stage: isFinished ? "Harvested" : harvestForm.actionType === "Trim Harvest" ? "Trimmed" : "Ready",
         date: formatDateInput(new Date()),
         scrapType: "",
         note: actionNote,
@@ -2647,26 +2535,26 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             <Panel title="Add Production Inventory">
               <FormGrid columns={3}>
                 <Field label="Tower">
-                  <input value={inventoryTower} onChange={(e) => setInventoryTower(e.target.value)} style={inputStyle} placeholder="R1" />
+                  <input value={inventoryForm.tower} onChange={(e) => dispatchInventory({ type: "SET_FIELD", field: "tower", value: e.target.value })} style={inputStyle} placeholder="R1" />
                 </Field>
 
                 <Field label="Tower Type">
-                  <select value={inventoryTowerType} onChange={(e) => setInventoryTowerType(e.target.value)} style={inputStyle}>
+                  <select value={inventoryForm.towerType} onChange={(e) => dispatchInventory({ type: "SET_TOWER_TYPE", towerType: e.target.value })} style={inputStyle}>
                     <option value="Low Density">Low Density (44 pods)</option>
                     <option value="High Density">High Density (160 pods)</option>
                   </select>
                 </Field>
 
                 <Field label="Max Pods">
-                  <input value={inventoryMaxPods} onChange={(e) => setInventoryMaxPods(e.target.value)} style={inputStyle} />
+                  <input value={inventoryForm.maxPods} onChange={(e) => dispatchInventory({ type: "SET_FIELD", field: "maxPods", value: e.target.value })} style={inputStyle} />
                 </Field>
 
                 <Field label="Active Pods">
-                  <input value={inventoryActivePods} onChange={(e) => setInventoryActivePods(e.target.value)} style={inputStyle} />
+                  <input value={inventoryForm.activePods} onChange={(e) => dispatchInventory({ type: "SET_CROP_OR_PODS", activePods: e.target.value })} style={inputStyle} />
                 </Field>
 
                 <Field label="Crop">
-                  <select value={inventoryCrop} onChange={(e) => setInventoryCrop(e.target.value)} style={inputStyle}>
+                  <select value={inventoryForm.crop} onChange={(e) => dispatchInventory({ type: "SET_CROP_OR_PODS", crop: e.target.value })} style={inputStyle}>
                     <option value="">Select Crop</option>
                     {uniqueCrops.map((item) => (
                       <option key={item} value={item}>
@@ -2677,7 +2565,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 </Field>
 
                 <Field label="Stage">
-                  <select value={inventoryStage} onChange={(e) => setInventoryStage(e.target.value)} style={inputStyle}>
+                  <select value={inventoryForm.stage} onChange={(e) => dispatchInventory({ type: "SET_FIELD", field: "stage", value: e.target.value })} style={inputStyle}>
                     <option value="Seeded">Seeded</option>
                     <option value="Transplanted">Transplanted</option>
                     <option value="Growing">Growing</option>
@@ -2688,14 +2576,14 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 </Field>
 
                 <Field label="Seeded Date">
-                  <input type="date" value={inventorySeededDate} onChange={(e) => setInventorySeededDate(e.target.value)} style={inputStyle} />
+                  <input type="date" value={inventoryForm.seededDate} onChange={(e) => dispatchInventory({ type: "SET_SEEDED_DATE", seededDate: e.target.value })} style={inputStyle} />
                 </Field>
 
                 <Field label="Transplant Date">
                   <input
                     type="date"
-                    value={inventoryTransplantDate}
-                    onChange={(e) => setInventoryTransplantDate(e.target.value)}
+                    value={inventoryForm.transplantDate}
+                    onChange={(e) => dispatchInventory({ type: "SET_FIELD", field: "transplantDate", value: e.target.value })}
                     style={inputStyle}
                   />
                 </Field>
@@ -2703,22 +2591,22 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 <Field label="Estimated Ready Date">
                   <input
                     type="date"
-                    value={inventoryEstimatedReadyDate}
-                    onChange={(e) => setInventoryEstimatedReadyDate(e.target.value)}
+                    value={inventoryForm.estimatedReadyDate}
+                    onChange={(e) => dispatchInventory({ type: "SET_FIELD", field: "estimatedReadyDate", value: e.target.value })}
                     style={inputStyle}
                   />
                 </Field>
 
                 <Field label="Expected Lbs">
-                  <input value={inventoryExpectedLbs} onChange={(e) => setInventoryExpectedLbs(e.target.value)} style={inputStyle} />
+                  <input value={inventoryForm.expectedLbs} onChange={(e) => dispatchInventory({ type: "SET_FIELD", field: "expectedLbs", value: e.target.value })} style={inputStyle} />
                 </Field>
 
                 <Field label="Remaining Expected Lbs">
-                  <input value={inventoryRemainingExpectedLbs} onChange={(e) => setInventoryRemainingExpectedLbs(e.target.value)} style={inputStyle} />
+                  <input value={inventoryForm.remainingExpectedLbs} onChange={(e) => dispatchInventory({ type: "SET_FIELD", field: "remainingExpectedLbs", value: e.target.value })} style={inputStyle} />
                 </Field>
 
                 <Field label="Status">
-                  <select value={inventoryStatus} onChange={(e) => setInventoryStatus(e.target.value)} style={inputStyle}>
+                  <select value={inventoryForm.status} onChange={(e) => dispatchInventory({ type: "SET_FIELD", field: "status", value: e.target.value })} style={inputStyle}>
                     <option value="Active">Active</option>
                     <option value="Harvested">Harvested</option>
                     <option value="Lost">Lost</option>
@@ -2729,12 +2617,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               </FormGrid>
 
               <Field label="Notes">
-                <input value={inventoryNotes} onChange={(e) => setInventoryNotes(e.target.value)} style={inputStyle} />
+                <input value={inventoryForm.notes} onChange={(e) => dispatchInventory({ type: "SET_FIELD", field: "notes", value: e.target.value })} style={inputStyle} />
               </Field>
 
-              <ActionRow message={inventoryMessage}>
-                <button onClick={handleSaveInventory} style={primaryButtonStyle} disabled={inventorySaving}>
-                  {inventorySaving ? "Saving..." : "Save Production Inventory"}
+              <ActionRow message={inventoryForm.message}>
+                <button onClick={handleSaveInventory} style={primaryButtonStyle} disabled={inventoryForm.saving}>
+                  {inventoryForm.saving ? "Saving..." : "Save Production Inventory"}
                 </button>
               </ActionRow>
             </Panel>
@@ -2743,30 +2631,30 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   <Panel title="Edit Production Inventory">
               <FormGrid columns={3}>
                 <Field label="Selected Row">
-                  <input value={editingInventoryRowNumber} readOnly style={inputStyle} placeholder="Click Edit on a row below" />
+                  <input value={editInventoryForm.rowNumber} readOnly style={inputStyle} placeholder="Click Edit on a row below" />
                 </Field>
 
                 <Field label="Tower">
-                  <input value={editInventoryTower} onChange={(e) => setEditInventoryTower(e.target.value)} style={inputStyle} />
+                  <input value={editInventoryForm.tower} onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "tower", value: e.target.value })} style={inputStyle} />
                 </Field>
 
                 <Field label="Tower Type">
-                  <select value={editInventoryTowerType} onChange={(e) => setEditInventoryTowerType(e.target.value)} style={inputStyle}>
+                  <select value={editInventoryForm.towerType} onChange={(e) => dispatchEditInventory({ type: "SET_TOWER_TYPE", towerType: e.target.value })} style={inputStyle}>
                     <option value="Low Density">Low Density (44 pods)</option>
                     <option value="High Density">High Density (160 pods)</option>
                   </select>
                 </Field>
 
                 <Field label="Max Pods">
-                  <input value={editInventoryMaxPods} onChange={(e) => setEditInventoryMaxPods(e.target.value)} style={inputStyle} />
+                  <input value={editInventoryForm.maxPods} onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "maxPods", value: e.target.value })} style={inputStyle} />
                 </Field>
 
                 <Field label="Active Pods">
-                  <input value={editInventoryActivePods} onChange={(e) => setEditInventoryActivePods(e.target.value)} style={inputStyle} />
+                  <input value={editInventoryForm.activePods} onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "activePods", value: e.target.value })} style={inputStyle} />
                 </Field>
 
                 <Field label="Crop">
-                  <select value={editInventoryCrop} onChange={(e) => setEditInventoryCrop(e.target.value)} style={inputStyle}>
+                  <select value={editInventoryForm.crop} onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "crop", value: e.target.value })} style={inputStyle}>
                     <option value="">Select Crop</option>
                     {uniqueCrops.map((item) => (
                       <option key={item} value={item}>
@@ -2777,7 +2665,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 </Field>
 
                 <Field label="Stage">
-                  <select value={editInventoryStage} onChange={(e) => setEditInventoryStage(e.target.value)} style={inputStyle}>
+                  <select value={editInventoryForm.stage} onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "stage", value: e.target.value })} style={inputStyle}>
                     <option value="Seeded">Seeded</option>
                     <option value="Transplanted">Transplanted</option>
                     <option value="Growing">Growing</option>
@@ -2788,36 +2676,36 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 </Field>
 
                 <Field label="Seeded Date">
-                  <input type="date" value={editInventorySeededDate} onChange={(e) => setEditInventorySeededDate(e.target.value)} style={inputStyle} />
+                  <input type="date" value={editInventoryForm.seededDate} onChange={(e) => dispatchEditInventory({ type: "SET_SEEDED_DATE", seededDate: e.target.value })} style={inputStyle} />
                 </Field>
 
                 <Field label="Transplant Date">
-                  <input type="date" value={editInventoryTransplantDate} onChange={(e) => setEditInventoryTransplantDate(e.target.value)} style={inputStyle} />
+                  <input type="date" value={editInventoryForm.transplantDate} onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "transplantDate", value: e.target.value })} style={inputStyle} />
                 </Field>
 
                 <Field label="Estimated Ready Date">
                   <input
                     type="date"
-                    value={editInventoryEstimatedReadyDate}
-                    onChange={(e) => setEditInventoryEstimatedReadyDate(e.target.value)}
+                    value={editInventoryForm.estimatedReadyDate}
+                    onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "estimatedReadyDate", value: e.target.value })}
                     style={inputStyle}
                   />
                 </Field>
 
                 <Field label="Expected Lbs">
-                  <input value={editInventoryExpectedLbs} onChange={(e) => setEditInventoryExpectedLbs(e.target.value)} style={inputStyle} />
+                  <input value={editInventoryForm.expectedLbs} onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "expectedLbs", value: e.target.value })} style={inputStyle} />
                 </Field>
 
                 <Field label="Remaining Expected Lbs">
                   <input
-                    value={editInventoryRemainingExpectedLbs}
-                    onChange={(e) => setEditInventoryRemainingExpectedLbs(e.target.value)}
+                    value={editInventoryForm.remainingExpectedLbs}
+                    onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "remainingExpectedLbs", value: e.target.value })}
                     style={inputStyle}
                   />
                 </Field>
 
                 <Field label="Status">
-                  <select value={editInventoryStatus} onChange={(e) => setEditInventoryStatus(e.target.value)} style={inputStyle}>
+                  <select value={editInventoryForm.status} onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "status", value: e.target.value })} style={inputStyle}>
                     <option value="Active">Active</option>
                     <option value="Harvested">Harvested</option>
                     <option value="Lost">Lost</option>
@@ -2828,12 +2716,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               </FormGrid>
 
               <Field label="Notes">
-                <input value={editInventoryNotes} onChange={(e) => setEditInventoryNotes(e.target.value)} style={inputStyle} />
+                <input value={editInventoryForm.notes} onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "notes", value: e.target.value })} style={inputStyle} />
               </Field>
 
-              <ActionRow message={editInventoryMessage}>
-                <button onClick={handleSaveInventoryEdits} style={primaryButtonStyle} disabled={editInventorySaving}>
-                  {editInventorySaving ? "Saving..." : "Save Changes"}
+              <ActionRow message={editInventoryForm.message}>
+                <button onClick={handleSaveInventoryEdits} style={primaryButtonStyle} disabled={editInventoryForm.saving}>
+                  {editInventoryForm.saving ? "Saving..." : "Save Changes"}
                 </button>
                 <button onClick={clearEditInventoryForm} style={secondaryButtonStyle}>
                   Clear
@@ -3307,7 +3195,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 </tr>
               ) : (
                 readyToHarvestInventory.map((item) => {
-                  const isActiveRow = String(item.rowNumber) === activeHarvestRowNumber;
+                  const isActiveRow = String(item.rowNumber) === harvestForm.activeRowNumber;
                   return (
                     <React.Fragment key={item.rowNumber}>
                       <tr>
@@ -3329,16 +3217,16 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                           <td colSpan={8} style={{ ...tdStyle, background: "#f8fafc" }}>
                             <FormGrid columns={3}>
                               <Field label="Harvest Type">
-                                <select value={harvestActionType} onChange={(e) => setHarvestActionType(e.target.value as "Full Harvest" | "Trim Harvest")} style={compactInputStyle}>
+                                <select value={harvestForm.actionType} onChange={(e) => dispatchHarvest({ type: "SET_FIELD", field: "actionType", value: e.target.value })} style={compactInputStyle}>
                                   <option value="Full Harvest">Full Harvest</option>
                                   <option value="Trim Harvest">Trim Harvest</option>
                                 </select>
                               </Field>
-                              <Field label={harvestActionType === "Trim Harvest" ? "Pods Trimmed" : "Pods Harvested"}>
-                                <input value={harvestPodsValue} onChange={(e) => setHarvestPodsValue(e.target.value)} style={compactInputStyle} />
+                              <Field label={harvestForm.actionType === "Trim Harvest" ? "Pods Trimmed" : "Pods Harvested"}>
+                                <input value={harvestForm.podsValue} onChange={(e) => dispatchHarvest({ type: "SET_FIELD", field: "podsValue", value: e.target.value })} style={compactInputStyle} />
                               </Field>
                               <Field label="Output Unit">
-                                <select value={harvestOutputUnit} onChange={(e) => setHarvestOutputUnit(e.target.value as OrderUnitType)} style={compactInputStyle}>
+                                <select value={harvestForm.outputUnit} onChange={(e) => dispatchHarvest({ type: "SET_FIELD", field: "outputUnit", value: e.target.value })} style={compactInputStyle}>
                                   <option value="Lbs">Lbs</option>
                                   <option value="6oz Bag">6oz Bag</option>
                                   <option value="6oz Clamshell">6oz Clamshell</option>
@@ -3346,14 +3234,14 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                                 </select>
                               </Field>
                               <Field label="Harvested Qty">
-                                <input value={harvestOutputQty} onChange={(e) => setHarvestOutputQty(e.target.value)} style={compactInputStyle} />
+                                <input value={harvestForm.outputQty} onChange={(e) => dispatchHarvest({ type: "SET_FIELD", field: "outputQty", value: e.target.value })} style={compactInputStyle} />
                               </Field>
                               <Field label="Harvested Lbs">
-                                <input value={String(quantityToLbs(harvestOutputUnit, toNumber(harvestOutputQty)))} readOnly style={{ ...compactInputStyle, background: "#f1f5f9" }} />
+                                <input value={String(quantityToLbs(harvestForm.outputUnit, toNumber(harvestForm.outputQty)))} readOnly style={{ ...compactInputStyle, background: "#f1f5f9" }} />
                               </Field>
                             </FormGrid>
                             <Field label="Notes">
-                              <input value={harvestNote} onChange={(e) => setHarvestNote(e.target.value)} style={compactInputStyle} />
+                              <input value={harvestForm.note} onChange={(e) => dispatchHarvest({ type: "SET_FIELD", field: "note", value: e.target.value })} style={compactInputStyle} />
                             </Field>
                             <ActionRow message={dailyMessage}>
                               <button onClick={handleReadyHarvestSubmit} style={primaryButtonStyle}>Save Harvest</button>
