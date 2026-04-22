@@ -2555,7 +2555,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         .app-btn:disabled { opacity: 0.65; cursor: not-allowed; }
       `}</style>
       <div style={containerStyle}>
-       <header
+     <header
   style={{
     ...headerStyle,
     display: "flex",
@@ -2565,21 +2565,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     flexWrap: "wrap",
   }}
 >
-  <div style={{ minWidth: 0, flex: "1 1 420px" }}>
-    <h1 style={{ margin: 0, fontSize: "clamp(24px, 4vw, 34px)", lineHeight: 1.15 }}>
-      Switchpoint Greenhouse Dashboard
-    </h1>
-    <p style={{ margin: "10px 0 0 0", opacity: 0.9, fontSize: 15 }}>
-      Mobile-friendly operations build for dashboard, production inventory, and staff daily tasks.
-    </p>
-  </div>
-
   <div
     style={{
       flex: "0 0 auto",
       display: "flex",
       alignItems: "flex-start",
-      justifyContent: "flex-end",
+      justifyContent: "flex-start",
     }}
   >
     <img
@@ -2593,6 +2584,15 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         objectFit: "contain",
       }}
     />
+  </div>
+
+  <div style={{ minWidth: 0, flex: "1 1 420px" }}>
+    <h1 style={{ margin: 0, fontSize: "clamp(24px, 4vw, 34px)", lineHeight: 1.15 }}>
+      Switchpoint Greenhouse Dashboard
+    </h1>
+    <p style={{ margin: "10px 0 0 0", opacity: 0.9, fontSize: 15 }}>
+      Mobile-friendly operations build for dashboard, production inventory, and staff daily tasks.
+    </p>
   </div>
 </header>
 
