@@ -3,3 +3,4 @@ export * from './cropUtils';
 export * from './inventoryUtils';
 export * from './orderUtils';
 export * from './staffUtils';
+export * from './demandUtils';

@@ -88,6 +88,7 @@ import {
   isOverdue,
 } from "../lib/utils/dateUtils";
 import { postToBackend } from "../lib/api";
+import { buildCropPools, allocateOrderAgainstPool } from "../lib/utils/demandUtils";
 import {
   pageStyle,
   containerStyle,
@@ -494,22 +495,7 @@ const openOrders = useMemo(() => {
 }, [salesOrders]);
 
 const plantTodayTasks = useMemo(() => {
-  const cropPools = new Map<
-    string,
-    {
-      readyLbs: number;
-      readyPlants: number;
-      futureEntries: Array<{ readyDate: string; lbs: number; plants: number }>;
-    }
-  >();
-
-  for (const [cropName, cropInventory] of inventoryByCrop.entries()) {
-    cropPools.set(cropName, {
-      readyLbs: cropInventory.readyNowLbs,
-      readyPlants: cropInventory.readyNowPlants,
-      futureEntries: cropInventory.futureEntries.map((entry) => ({ ...entry })),
-    });
-  }
+  const cropPools = buildCropPools(inventoryByCrop);
 
   const grouped = new Map<
     string,
@@ -537,43 +523,19 @@ const plantTodayTasks = useMemo(() => {
 
     const unitType = getOrderUnitType(order);
     const qtyNeeded = toNumber(getOrderQuantityNeeded(order));
-    const qtyNeededInLbs = quantityToLbs(unitType, qtyNeeded);
     const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
     const seedByDate = addDays(dueDate, -42);
 
-    const pool =
-      cropPools.get(cropName) || {
-        readyLbs: 0,
-        readyPlants: 0,
-        futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
-      };
+    const pool = cropPools.get(cropName) || {
+      readyLbs: 0,
+      readyPlants: 0,
+      futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
+    };
 
-    let availableLbsByDue = pool.readyLbs;
-    let availablePlantsByDue = pool.readyPlants;
-    const remainingFutureEntries: Array<{ readyDate: string; lbs: number; plants: number }> = [];
-
-    for (const entry of pool.futureEntries) {
-      if (entry.readyDate && entry.readyDate <= dueDate) {
-        availableLbsByDue += entry.lbs;
-        availablePlantsByDue += entry.plants;
-      } else {
-        remainingFutureEntries.push(entry);
-      }
-    }
-
-    const shortageLbs = Math.max(0, qtyNeededInLbs - availableLbsByDue);
-    const newTowersNeeded = shortageLbs > 0 ? Math.ceil(shortageLbs / avgQtyPerTower) : 0;
-
-    const consumedLbs = Math.min(qtyNeededInLbs, availableLbsByDue);
-    const consumedPlants = Math.min(
-      unitType === "Plants" ? qtyNeeded : Math.round((consumedLbs * 16) / 6),
-      availablePlantsByDue
-    );
-
-    pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
-    pool.readyPlants = Math.max(0, availablePlantsByDue - consumedPlants);
-    pool.futureEntries = remainingFutureEntries;
+    const result = allocateOrderAgainstPool(pool, cropName, dueDate, unitType, qtyNeeded, avgQtyPerTower, true);
     cropPools.set(cropName, pool);
+
+    const newTowersNeeded = result.newTowersNeeded;
 
     if (newTowersNeeded <= 0 || !seedByDate) continue;
 
@@ -834,22 +796,7 @@ const overdueOrders = useMemo(() => {
           new Date(getOrderRequestedDeliveryDate(b) || "2100-01-01").getTime()
       );
 
-    const cropPools = new Map<
-      string,
-      {
-        readyLbs: number;
-        readyPlants: number;
-        futureEntries: Array<{ readyDate: string; lbs: number; plants: number }>;
-      }
-    >();
-
-    for (const [cropName, cropInventory] of inventoryByCrop.entries()) {
-      cropPools.set(cropName, {
-        readyLbs: cropInventory.readyNowLbs,
-        readyPlants: cropInventory.readyNowPlants,
-        futureEntries: cropInventory.futureEntries.map((entry) => ({ ...entry })),
-      });
-    }
+    const cropPools = buildCropPools(inventoryByCrop);
 
     const alerts = openOrders
       .map((row) => {
@@ -857,43 +804,15 @@ const overdueOrders = useMemo(() => {
         const dueDate = getOrderRequestedDeliveryDate(row);
         const unitType = getOrderUnitType(row);
         const qtyNeeded = toNumber(getOrderQuantityNeeded(row));
-        const qtyNeededInLbs = quantityToLbs(unitType, qtyNeeded);
         const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
 
-        const pool =
-          cropPools.get(cropName) || {
-            readyLbs: 0,
-            readyPlants: 0,
-            futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
-          };
+        const pool = cropPools.get(cropName) || {
+          readyLbs: 0,
+          readyPlants: 0,
+          futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
+        };
 
-        let availableLbsByDue = pool.readyLbs;
-        let availablePlantsByDue = pool.readyPlants;
-        const remainingFutureEntries: Array<{ readyDate: string; lbs: number; plants: number }> = [];
-
-        for (const entry of pool.futureEntries) {
-          if (dueDate && entry.readyDate && entry.readyDate <= dueDate) {
-            availableLbsByDue += entry.lbs;
-            availablePlantsByDue += entry.plants;
-          } else {
-            remainingFutureEntries.push(entry);
-          }
-        }
-
-        const availableQtyByDue = availableLbsToUnitQty(unitType, availableLbsByDue, availablePlantsByDue);
-        const shortageQty = Math.max(0, qtyNeeded - availableQtyByDue);
-        const shortageLbs = Math.max(0, qtyNeededInLbs - availableLbsByDue);
-        const newTowers = shortageLbs > 0 ? Math.ceil(shortageLbs / avgQtyPerTower) : 0;
-
-        const consumedLbs = Math.min(qtyNeededInLbs, availableLbsByDue);
-        const consumedPlants = Math.min(
-          unitType === "Plants" ? qtyNeeded : Math.round((consumedLbs * 16) / 6),
-          availablePlantsByDue
-        );
-
-        pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
-        pool.readyPlants = Math.max(0, availablePlantsByDue - consumedPlants);
-        pool.futureEntries = remainingFutureEntries;
+        const result = allocateOrderAgainstPool(pool, cropName, dueDate, unitType, qtyNeeded, avgQtyPerTower, true);
         cropPools.set(cropName, pool);
 
         return {
@@ -901,8 +820,8 @@ const overdueOrders = useMemo(() => {
           customer: getOrderCustomer(row),
           crop: cropName,
           dueDate,
-          shortageQty,
-          newTowers,
+          shortageQty: result.shortageQty,
+          newTowers: result.newTowersNeeded,
           status: getOrderStatus(row),
         };
       })
@@ -968,22 +887,7 @@ const overdueOrders = useMemo(() => {
           new Date(getOrderRequestedDeliveryDate(b) || "2100-01-01").getTime()
       );
 
-    const cropPools = new Map<
-      string,
-      {
-        readyLbs: number;
-        readyPlants: number;
-        futureEntries: Array<{ readyDate: string; lbs: number; plants: number }>;
-      }
-    >();
-
-    for (const [cropName, cropInventory] of inventoryByCrop.entries()) {
-      cropPools.set(cropName, {
-        readyLbs: cropInventory.readyNowLbs,
-        readyPlants: cropInventory.readyNowPlants,
-        futureEntries: cropInventory.futureEntries.map((entry) => ({ ...entry })),
-      });
-    }
+    const cropPools = buildCropPools(inventoryByCrop);
 
     const buckets = new Map<
       string,
@@ -1001,42 +905,18 @@ const overdueOrders = useMemo(() => {
       const dueDate = getOrderRequestedDeliveryDate(row);
       const unitType = getOrderUnitType(row);
       const qtyNeeded = toNumber(getOrderQuantityNeeded(row));
-      const qtyNeededInLbs = quantityToLbs(unitType, qtyNeeded);
       const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
 
-      const pool =
-        cropPools.get(cropName) || {
-          readyLbs: 0,
-          readyPlants: 0,
-          futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
-        };
+      const pool = cropPools.get(cropName) || {
+        readyLbs: 0,
+        readyPlants: 0,
+        futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
+      };
 
-      let availableLbsByDue = pool.readyLbs;
-      let availablePlantsByDue = pool.readyPlants;
-      const remainingFutureEntries: Array<{ readyDate: string; lbs: number; plants: number }> = [];
-
-      for (const entry of pool.futureEntries) {
-        if (dueDate && entry.readyDate && entry.readyDate <= dueDate) {
-          availableLbsByDue += entry.lbs;
-          availablePlantsByDue += entry.plants;
-        } else {
-          remainingFutureEntries.push(entry);
-        }
-      }
-
-      const shortageLbs = Math.max(0, qtyNeededInLbs - availableLbsByDue);
-      const newTowers = shortageLbs > 0 ? Math.ceil(shortageLbs / avgQtyPerTower) : 0;
-
-      const consumedLbs = Math.min(qtyNeededInLbs, availableLbsByDue);
-      const consumedPlants = Math.min(
-        unitType === "Plants" ? qtyNeeded : Math.round((consumedLbs * 16) / 6),
-        availablePlantsByDue
-      );
-
-      pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
-      pool.readyPlants = Math.max(0, availablePlantsByDue - consumedPlants);
-      pool.futureEntries = remainingFutureEntries;
+      const result = allocateOrderAgainstPool(pool, cropName, dueDate, unitType, qtyNeeded, avgQtyPerTower, true);
       cropPools.set(cropName, pool);
+
+      const newTowers = result.newTowersNeeded;
 
       if (newTowers <= 0 || !dueDate) continue;
 
