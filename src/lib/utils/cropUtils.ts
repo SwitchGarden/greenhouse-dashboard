@@ -1,3 +1,5 @@
+export const makeId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
 export const SIX_OZ_IN_LBS = 6 / 16;
 export const SMALL_BAG_OZ_IN_LBS = 0.75 / 16;
 export const REPEAT_HARVEST_CROPS = new Set(["brassica"]);

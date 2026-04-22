@@ -1,491 +1,113 @@
 import React, { useEffect, useMemo, useState } from "react";
-
-type PageKey = "dashboard" | "inventory" | "staffDaily";
-
-type StaffActionRow = {
-  rowNumber: number;
-  Timestamp?: string;
-  Mode?: string;
-  Tower?: string;
-  Crop?: string;
-  Lbs?: number | string;
-  LBS?: number | string;
-  "Pods Changed"?: number | string;
-  Status?: string;
-  Stage?: string;
-  Date?: string;
-  "Scrap Type"?: string;
-  Note?: string;
-  timestamp?: string;
-  mode?: string;
-  tower?: string;
-  crop?: string;
-  lbs?: number | string;
-  podsChanged?: number | string;
-  status?: string;
-  stage?: string;
-  date?: string;
-  scrapType?: string;
-  note?: string;
-};
-
-type SalesOrderRow = {
-  rowNumber: number;
-  Timestamp?: string;
-  Customer?: string;
-  Crop?: string;
-  "Unit Type"?: string;
-  "Quantity Needed"?: number | string;
-  "Requested Delivery Date"?: string;
-  "Available Qty"?: number | string;
-  "Shortage Qty"?: number | string;
-  "Towers Needed"?: number | string;
-  "Pipeline Towers"?: number | string;
-  "New Towers To Plant"?: number | string;
-  "Estimated Ready Date"?: string;
-  Feasible?: string;
-  Notes?: string;
-  Status?: string;
-  "Order Type"?: string;
-  Frequency?: string;
-  "Contract Start Date"?: string;
-  "Contract End Date"?: string;
-  timestamp?: string;
-  customer?: string;
-  crop?: string;
-  unitType?: string;
-  quantityNeeded?: number | string;
-  requestedDeliveryDate?: string;
-  availableQty?: number | string;
-  shortageQty?: number | string;
-  towersNeeded?: number | string;
-  pipelineTowers?: number | string;
-  newTowersToPlant?: number | string;
-  estimatedReadyDate?: string;
-  feasible?: string;
-  notes?: string;
-  status?: string;
-  orderType?: string;
-  frequency?: string;
-  contractStartDate?: string;
-  contractEndDate?: string;
-};
-
-type ProductionInventoryRow = {
-  rowNumber: number;
-  Timestamp?: string;
-  Tower?: string;
-  "Tower Type"?: string;
-  "Max Pods"?: number | string;
-  "Active Pods"?: number | string;
-  Crop?: string;
-  Stage?: string;
-  "Seeded Date"?: string;
-  "Transplant Date"?: string;
-  "Estimated Ready Date"?: string;
-  "Expected Lbs"?: number | string;
-  "Remaining Expected Lbs"?: number | string;
-  Status?: string;
-  Notes?: string;
-  timestamp?: string;
-  tower?: string;
-  towerType?: string;
-  maxPods?: number | string;
-  activePods?: number | string;
-  crop?: string;
-  stage?: string;
-  seededDate?: string;
-  transplantDate?: string;
-  estimatedReadyDate?: string;
-  expectedLbs?: number | string;
-  remainingExpectedLbs?: number | string;
-  status?: string;
-  notes?: string;
-};
-
-type OrderUnitType = "Lbs" | "Plants" | "6oz Bag" | "6oz Clamshell" | "0.75oz Small Bag";
-
-type SalesPlannerResult = {
-  availableQty: number;
-  shortageQty: number;
-  towersNeeded: number;
-  pipelineTowers: number;
-  newTowersToPlant: number;
-  estimatedReadyDate: string;
-  deliveryFeasible: boolean;
-  unitLabel: string;
-  qtyNeededInLbs: number;
-};
-
-type DraftOrderLine = {
-  id: string;
-  crop: string;
-  unitType: OrderUnitType;
-  quantityNeeded: string;
-};
-
-const API_URL = import.meta.env.VITE_API_BASE_URL;
-
-const SIX_OZ_IN_LBS = 6 / 16;
-const SMALL_BAG_OZ_IN_LBS = 0.75 / 16;
-const REPEAT_HARVEST_CROPS = new Set(["brassica"]);
-
-const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
-const isContainerUnit = (unitType: string) => unitType === "6oz Bag" || unitType === "6oz Clamshell" || unitType === "0.75oz Small Bag";
-
-const quantityToLbs = (unitType: string, quantity: number) => {
-  if (unitType === "Plants") return 0;
-  if (unitType === "0.75oz Small Bag") return Math.round(quantity * SMALL_BAG_OZ_IN_LBS * 100) / 100;
-  if (isContainerUnit(unitType)) return Math.round(quantity * SIX_OZ_IN_LBS * 100) / 100;
-  return Math.round(quantity * 100) / 100;
-};
-
-const availableLbsToUnitQty = (unitType: string, lbs: number, plants: number) => {
-  if (unitType === "Plants") return Math.max(0, Math.floor(plants));
-  if (unitType === "0.75oz Small Bag") return Math.max(0, Math.floor(lbs / SMALL_BAG_OZ_IN_LBS));
-  if (isContainerUnit(unitType)) return Math.max(0, Math.floor(lbs / SIX_OZ_IN_LBS));
-  return Math.max(0, Math.round(lbs * 100) / 100);
-};
-
-const getUnitLabel = (unitType: string) => {
-  if (unitType === "Plants") return "Plants";
-  if (unitType === "0.75oz Small Bag") return "Small Bags";
-  if (unitType === "6oz Bag") return "Bags";
-  if (unitType === "6oz Clamshell") return "Clamshells";
-  return "Lbs";
-};
-
-const isRepeatHarvestCrop = (crop: string) => REPEAT_HARVEST_CROPS.has(normalizeCropKey(crop));
-
-const CROP_PROFILES: Record<
-  string,
-  {
-    expectedLbsPerTower: number;
-  }
-> = {
-  arugula: { expectedLbsPerTower: 1.76 },
-  basil: { expectedLbsPerTower: 3.52 },
-  thai_basil: { expectedLbsPerTower: 3.52 },
-  butterhead: { expectedLbsPerTower: 3.52 },
-  brassica: { expectedLbsPerTower: 3.52 },
-  cilantro: { expectedLbsPerTower: 6.4 },
-  dill: { expectedLbsPerTower: 3.52 },
-  fennel: { expectedLbsPerTower: 3.52 },
-  five_star: { expectedLbsPerTower: 5.5 },
-  green_mizuna: { expectedLbsPerTower: 3.52 },
-  red_mizuna: { expectedLbsPerTower: 3.52 },
-  kale: { expectedLbsPerTower: 3.52 },
-  lettuce_mix: { expectedLbsPerTower: 3.52 },
-  mint: { expectedLbsPerTower: 3.52 },
-  muir: { expectedLbsPerTower: 5.6 },
-  oakleaf: { expectedLbsPerTower: 3.52 },
-  parsley: { expectedLbsPerTower: 3.52 },
-  romaine: { expectedLbsPerTower: 3.52 },
-  swiss_chard: { expectedLbsPerTower: 3.52 },
-  mizuna: { expectedLbsPerTower: 3.52 },
-  wildfire: { expectedLbsPerTower: 5.5 },
-};
-const normalizeCropKey = (crop: string = "") =>
-  crop
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, "and")
-    .replace(/\//g, " ")
-    .replace(/\s+/g, "_");
-
-const cropAliases: Record<string, string> = {
-  thaibasil: "thai_basil",
-  thai_basil: "thai_basil",
-  greenmizuna: "green_mizuna",
-  green_mizuna: "green_mizuna",
-  redmizuna: "red_mizuna",
-  red_mizuna: "red_mizuna",
-  lettucemix: "lettuce_mix",
-  lettuce_mix: "lettuce_mix",
-  fivestar: "five_star",
-  five_star: "five_star",
-  swisschard: "swiss_chard",
-  swiss_chard: "swiss_chard",
-};
-const getCropProfile = (crop: string) => {
-  const normalized = normalizeCropKey(crop);
-  const aliasKey = cropAliases[normalized] || normalized;
-
-  return (
-    CROP_PROFILES[aliasKey] || {
-      expectedLbsPerTower: 3.52,
-    }
-  );
-};
-const formatCropLabel = (crop: string) => {
-  const normalized = normalizeCropKey(crop);
-  const aliasKey = cropAliases[normalized] || normalized;
-
-  return aliasKey
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-};
-const getExpectedLbs = (crop: string) => {
-  const profile = getCropProfile(crop);
-  return profile ? profile.expectedLbsPerTower : "";
-};
-
-const toNumber = (value: unknown) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : 0;
-};
-
-const normalizeStatus = (status: string) => (status || "").trim().toLowerCase();
-
-const formatDateInput = (value: string | Date | null | undefined) => {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
-};
-
-const formatDateDisplay = (value: string | Date | null | undefined) => {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString();
-};
-
-const formatDateTimeDisplay = (value: string | Date | null | undefined) => {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString();
-};
-
-const addDays = (dateString: string, days: number) => {
-  if (!dateString) return "";
-  const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return "";
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
-};
-
-const getStartOfWeek = (date: Date) => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
-
-const getEndOfWeek = (date: Date) => {
-  const d = getStartOfWeek(date);
-  d.setDate(d.getDate() + 6);
-  d.setHours(23, 59, 59, 999);
-  return d;
-};
-
-const getTowerMaxPods = (towerType: string) => {
-  
-  return towerType === "High Density" ? 160 : 44;
-};
-
-const TOWER_ROW_ORDER = ["R", "O", "Y", "G", "B", "I", "V"];
-
-const parseTowerForSort = (tower: string) => {
-  const raw = (tower || "").trim().toUpperCase();
-
-  const match = raw.match(/^([A-Z]+)\s*0*(\d+)?/);
-
-  if (!match) {
-    return {
-      rowIndex: 999,
-      towerNumber: 9999,
-    };
-  }
-
-  const rowKey = match[1];
-  const towerNumber = match[2] ? Number(match[2]) : 9999;
-
-  return {
-    rowIndex: TOWER_ROW_ORDER.indexOf(rowKey),
-    towerNumber,
-  };
-};
-
-const sortInventoryByTowerLayout = (a: any, b: any) => {
-  const towerA = parseTowerForSort(getInventoryTower(a));
-  const towerB = parseTowerForSort(getInventoryTower(b));
-
-  if (towerA.rowIndex !== towerB.rowIndex) {
-    return towerA.rowIndex - towerB.rowIndex;
-  }
-
-  return towerA.towerNumber - towerB.towerNumber;
-};
-
-const calculateExpectedLbs = (crop: string, activePods: number, towerType = "Low Density") => {
-  const profile = getCropProfile(crop);
-  const fullTowerPods = towerType === "High Density" ? 160 : 44;
-  return Math.round(((activePods / fullTowerPods) * profile.expectedLbsPerTower) * 100) / 100;
-};
-
-const isDueTodayOrTomorrow = (dateString: string) => {
-  if (!dateString) return false;
-  const target = new Date(dateString);
-  if (Number.isNaN(target.getTime())) return false;
-
-  const today = new Date();
-  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const tomorrowOnly = new Date(todayOnly);
-  tomorrowOnly.setDate(tomorrowOnly.getDate() + 1);
-
-  const targetOnly = new Date(target.getFullYear(), target.getMonth(), target.getDate());
-
-  return targetOnly.getTime() === todayOnly.getTime() || targetOnly.getTime() === tomorrowOnly.getTime();
-};
-
-const isDueToday = (dateString: string) => {
-  if (!dateString) return false;
-  const target = new Date(dateString);
-  if (Number.isNaN(target.getTime())) return false;
-
-  const today = new Date();
-  return (
-    target.getFullYear() === today.getFullYear() &&
-    target.getMonth() === today.getMonth() &&
-    target.getDate() === today.getDate()
-  );
-};
-
-const isOverdue = (dateString: string) => {
-  if (!dateString) return false;
-  const target = new Date(dateString);
-  if (Number.isNaN(target.getTime())) return false;
-
-  const today = new Date();
-  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const targetOnly = new Date(target.getFullYear(), target.getMonth(), target.getDate());
-
-  return targetOnly.getTime() < todayOnly.getTime();
-};
-
-const generateRecurringDates = (startDate: string, endDate: string, frequency: string) => {
-  if (!startDate || !endDate) return [];
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
-
-  const dates: string[] = [];
-  const current = new Date(start);
-
-  while (current <= end) {
-    dates.push(formatDateInput(current));
-
-    if (frequency === "Weekly") {
-      current.setDate(current.getDate() + 7);
-    } else if (frequency === "Bi-Weekly") {
-      current.setDate(current.getDate() + 14);
-    } else if (frequency === "Monthly") {
-      current.setMonth(current.getMonth() + 1);
-    } else {
-      break;
-    }
-  }
-
-  return dates;
-};
-
-async function postToBackend(payload: Record<string, unknown>) {
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/plain;charset=utf-8",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  return response.json();
-}
-
-const getStaffMode = (row: StaffActionRow) => row.mode || row.Mode || "";
-const getStaffTower = (row: StaffActionRow) => row.tower || row.Tower || "";
-const getStaffCrop = (row: StaffActionRow) => row.crop || row.Crop || "";
-const getStaffLbs = (row: StaffActionRow) => row.lbs ?? row.Lbs ?? row.LBS ?? "";
-const getStaffPodsChanged = (row: StaffActionRow) => row.podsChanged ?? row["Pods Changed"] ?? 0;
-const getStaffNote = (row: StaffActionRow) => row.note || row.Note || "";
-const getStaffTimestamp = (row: StaffActionRow) => row.timestamp || row.Timestamp || "";
-const getStaffDate = (row: StaffActionRow) => row.date || row.Date || "";
-
-const getOrderCustomer = (row: SalesOrderRow) => row.customer || row.Customer || "";
-const getOrderCrop = (row: SalesOrderRow) => row.crop || row.Crop || "";
-const getOrderUnitType = (row: SalesOrderRow) => row.unitType || row["Unit Type"] || "Lbs";
-const getOrderQuantityNeeded = (row: SalesOrderRow) => row.quantityNeeded ?? row["Quantity Needed"] ?? 0;
-const getOrderRequestedDeliveryDate = (row: SalesOrderRow) =>
-  row.requestedDeliveryDate || row["Requested Delivery Date"] || "";
-const getOrderPipelineTowers = (row: SalesOrderRow) => row.pipelineTowers ?? row["Pipeline Towers"] ?? 0;
-const getOrderNewTowersToPlant = (row: SalesOrderRow) => row.newTowersToPlant ?? row["New Towers To Plant"] ?? 0;
-const getOrderEstimatedReadyDate = (row: SalesOrderRow) =>
-  row.estimatedReadyDate || row["Estimated Ready Date"] || "";
-const getOrderStatus = (row: SalesOrderRow) => row.status || row.Status || "";
-const getOrderType = (row: SalesOrderRow) => row.orderType || row["Order Type"] || "One-Time";
-const getOrderFrequency = (row: SalesOrderRow) => row.frequency || row.Frequency || "";
-
-const getInventoryTower = (row: ProductionInventoryRow) => row.tower || row.Tower || "";
-const getInventoryTowerType = (row: ProductionInventoryRow) => row.towerType || row["Tower Type"] || "Low Density";
-const getInventoryMaxPods = (row: ProductionInventoryRow) =>
-  row.maxPods ?? row["Max Pods"] ?? getTowerMaxPods(getInventoryTowerType(row));
-const getInventoryActivePods = (row: ProductionInventoryRow) =>
-  row.activePods ?? row["Active Pods"] ?? getInventoryMaxPods(row);
-const getInventoryCrop = (row: ProductionInventoryRow) => row.crop || row.Crop || "";
-const getInventoryStage = (row: ProductionInventoryRow) => row.stage || row.Stage || "";
-const getInventorySeededDate = (row: ProductionInventoryRow) => row.seededDate || row["Seeded Date"] || "";
-const getInventoryTransplantDate = (row: ProductionInventoryRow) => row.transplantDate || row["Transplant Date"] || "";
-const getInventoryEstimatedReadyDate = (row: ProductionInventoryRow) =>
-  row.estimatedReadyDate || row["Estimated Ready Date"] || "";
-
-const getInventoryEffectiveReadyDate = (row: ProductionInventoryRow) => {
-  const explicitReadyDate = formatDateInput(getInventoryEstimatedReadyDate(row));
-  if (explicitReadyDate) return explicitReadyDate;
-
-  const seededDate = formatDateInput(getInventorySeededDate(row));
-  if (seededDate) return addDays(seededDate, 42);
-
-  return "";
-};
-
-const getInventoryExpectedLbs = (row: ProductionInventoryRow) => {
-  const stored = row.expectedLbs ?? row["Expected Lbs"];
-  if (stored !== "" && stored !== null && stored !== undefined) {
-    return stored;
-  }
-
-  return calculateExpectedLbs(
-    getInventoryCrop(row),
-    toNumber(getInventoryActivePods(row)),
-    getInventoryTowerType(row)
-  );
-};
-
-const getInventoryRemainingExpectedLbs = (row: ProductionInventoryRow) => {
-  const stored = row.remainingExpectedLbs ?? row["Remaining Expected Lbs"];
-  if (stored !== "" && stored !== null && stored !== undefined) {
-    return stored;
-  }
-
-  const expected = row.expectedLbs ?? row["Expected Lbs"];
-  if (expected !== "" && expected !== null && expected !== undefined) {
-    return expected;
-  }
-
-  return calculateExpectedLbs(
-    getInventoryCrop(row),
-    toNumber(getInventoryActivePods(row)),
-    getInventoryTowerType(row)
-  );
-};
-
-const getInventoryStatus = (row: ProductionInventoryRow) => row.status || row.Status || "";
-const getInventoryNotes = (row: ProductionInventoryRow) => row.notes || row.Notes || "";
+import type {
+  PageKey,
+  StaffActionRow,
+  SalesOrderRow,
+  ProductionInventoryRow,
+  OrderUnitType,
+  SalesPlannerResult,
+  DraftOrderLine,
+  CropInventoryEntry,
+} from "../lib/types";
+import {
+  makeId,
+  isContainerUnit,
+  quantityToLbs,
+  availableLbsToUnitQty,
+  getUnitLabel,
+  isRepeatHarvestCrop,
+  CROP_PROFILES,
+  normalizeCropKey,
+  cropAliases,
+  getCropProfile,
+  formatCropLabel,
+  getExpectedLbs,
+  calculateExpectedLbs,
+  SIX_OZ_IN_LBS,
+  SMALL_BAG_OZ_IN_LBS,
+  REPEAT_HARVEST_CROPS,
+} from "../lib/utils/cropUtils";
+import {
+  toNumber,
+  normalizeStatus,
+  getTowerMaxPods,
+  TOWER_ROW_ORDER,
+  parseTowerForSort,
+  sortInventoryByTowerLayout,
+  getInventoryTower,
+  getInventoryTowerType,
+  getInventoryMaxPods,
+  getInventoryActivePods,
+  getInventoryCrop,
+  getInventoryStage,
+  getInventorySeededDate,
+  getInventoryTransplantDate,
+  getInventoryEstimatedReadyDate,
+  getInventoryEffectiveReadyDate,
+  getInventoryExpectedLbs,
+  getInventoryRemainingExpectedLbs,
+  getInventoryStatus,
+  getInventoryNotes,
+} from "../lib/utils/inventoryUtils";
+import {
+  getOrderCustomer,
+  getOrderCrop,
+  getOrderUnitType,
+  getOrderQuantityNeeded,
+  getOrderRequestedDeliveryDate,
+  getOrderPipelineTowers,
+  getOrderNewTowersToPlant,
+  getOrderEstimatedReadyDate,
+  getOrderStatus,
+  getOrderType,
+  getOrderFrequency,
+} from "../lib/utils/orderUtils";
+import {
+  getStaffMode,
+  getStaffTower,
+  getStaffCrop,
+  getStaffLbs,
+  getStaffPodsChanged,
+  getStaffNote,
+  getStaffTimestamp,
+  getStaffDate,
+} from "../lib/utils/staffUtils";
+import {
+  formatDateInput,
+  formatDateDisplay,
+  formatDateTimeDisplay,
+  addDays,
+  getStartOfWeek,
+  getEndOfWeek,
+  generateRecurringDates,
+  isDueTodayOrTomorrow,
+  isDueToday,
+  isOverdue,
+} from "../lib/utils/dateUtils";
+import { postToBackend } from "../lib/api";
+import {
+  pageStyle,
+  containerStyle,
+  headerStyle,
+  navWrapStyle,
+  navButtonsStyle,
+  navButtonStyle,
+  navButtonActiveStyle,
+  primaryButtonStyle,
+  secondaryButtonStyle,
+  sectionStackStyle,
+  responsiveStatGridStyle,
+  responsiveTwoPanelGridStyle,
+  panelStyle,
+  statCardStyle,
+  miniMetricStyle,
+  inputStyle,
+  compactInputStyle,
+  textareaStyle,
+  tableStyle,
+  thStyle,
+  tdStyle,
+} from "../lib/styles";
 
 export default function App() {
   const [activePage, setActivePage] = useState<PageKey>("dashboard");
@@ -3973,175 +3595,3 @@ function MetricGrid({ children }: { children: React.ReactNode }) {
   );
 }
 
-const pageStyle: React.CSSProperties = {
-  minHeight: "100vh",
-  background: "#e5e7eb",
-  color: "#1f2937",
-  fontFamily: "Arial, sans-serif",
-};
-
-const containerStyle: React.CSSProperties = {
-  maxWidth: 1440,
-  margin: "0 auto",
-  padding: 16,
-};
-
-const headerStyle: React.CSSProperties = {
-  background: "#0f172a",
-  color: "white",
-  padding: 18,
-  borderRadius: 14,
-  marginBottom: 18,
-};
-
-const navWrapStyle: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 12,
-  alignItems: "center",
-  justifyContent: "space-between",
-  marginBottom: 18,
-};
-
-const navButtonsStyle: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 10,
-};
-
-const navButtonStyle: React.CSSProperties = {
-  padding: "12px 16px",
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  background: "#e5e7eb",
-  color: "#111827",
-  cursor: "pointer",
-  minHeight: 44,
-  fontSize: 14,
-};
-
-const navButtonActiveStyle: React.CSSProperties = {
-  ...navButtonStyle,
-  background: "#1d4ed8",
-  color: "white",
-  border: "1px solid #1d4ed8",
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-  padding: "12px 16px",
-  borderRadius: 10,
-  border: "none",
-  background: "#1d4ed8",
-  color: "white",
-  cursor: "pointer",
-  minHeight: 44,
-  fontSize: 14,
-};
-
-const secondaryButtonStyle: React.CSSProperties = {
-  padding: "12px 16px",
-  borderRadius: 10,
-  border: "1px solid #cbd5e1",
-  background: "white",
-  color: "#111827",
-  cursor: "pointer",
-  minHeight: 44,
-  fontSize: 14,
-};
-
-const sectionStackStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 18,
-};
-
-const responsiveStatGridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-  gap: 14,
-};
-
-const responsiveTwoPanelGridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-  gap: 18,
-};
-
-const panelStyle: React.CSSProperties = {
-  background: "#f8fafc",
-  borderRadius: 14,
-  padding: 16,
-  boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-  minWidth: 0,
-};
-
-const statCardStyle: React.CSSProperties = {
-  background: "white",
-  borderRadius: 12,
-  padding: 16,
-  boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-};
-
-const miniMetricStyle: React.CSSProperties = {
-  background: "white",
-  border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  padding: 12,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "12px 12px",
-  borderRadius: 10,
-  border: "1px solid #94a3b8",
-  background: "white",
-  boxSizing: "border-box",
-  fontSize: 16,
-  minHeight: 44,
-};
-
-const compactInputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "10px 10px",
-  borderRadius: 8,
-  border: "1px solid #94a3b8",
-  background: "white",
-  boxSizing: "border-box",
-  fontSize: 14,
-  minHeight: 40,
-};
-
-const textareaStyle: React.CSSProperties = {
-  ...inputStyle,
-  minHeight: 88,
-  resize: "vertical",
-};
-
-const tableStyle: React.CSSProperties = {
-  width: "100%",
-  minWidth: 680,
-  borderCollapse: "separate",
-  borderSpacing: 0,
-  background: "white",
-  border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  overflow: "hidden",
-};
-
-const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "12px 10px",
-  borderBottom: "1px solid #cbd5e1",
-  background: "#e2e8f0",
-  position: "sticky",
-  top: 0,
-  fontSize: 14,
-  whiteSpace: "nowrap",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "12px 10px",
-  borderBottom: "1px solid #e5e7eb",
-  verticalAlign: "top",
-  background: "white",
-  fontSize: 14,
-};
