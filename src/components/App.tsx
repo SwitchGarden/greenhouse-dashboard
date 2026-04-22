@@ -1996,24 +1996,49 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     }
   };
 
-  const uniqueModes = Array.from(new Set(staffRows.map((r) => getStaffMode(r)).filter(Boolean))).sort();
- const uniqueCrops = Array.from(
-  new Set(
-    [
-      ...Object.keys(CROP_PROFILES),
-      ...staffRows.map((r) => getStaffCrop(r)),
-      ...salesOrders.map((r) => getOrderCrop(r)),
-      ...productionInventory.map((r) => getInventoryCrop(r)),
-    ]
-      .filter(Boolean)
-      .map((crop) => formatCropLabel(String(crop)))
-  )
-).sort((a, b) => a.localeCompare(b));
-  const uniqueTowers = Array.from(
-    new Set([...staffRows.map((r) => getStaffTower(r)), ...productionInventory.map((r) => getInventoryTower(r))].filter(Boolean))
-  ).sort();
-  const uniqueCustomers = Array.from(new Set(salesOrders.map((r) => getOrderCustomer(r)).filter(Boolean))).sort();
-  const uniqueOrderStatuses = Array.from(new Set(salesOrders.map((r) => getOrderStatus(r)).filter(Boolean))).sort();
+  const uniqueModes = useMemo(
+    () => Array.from(new Set(staffRows.map((r) => getStaffMode(r)).filter(Boolean))).sort(),
+    [staffRows]
+  );
+
+  const uniqueCrops = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            ...Object.keys(CROP_PROFILES),
+            ...staffRows.map((r) => getStaffCrop(r)),
+            ...salesOrders.map((r) => getOrderCrop(r)),
+            ...productionInventory.map((r) => getInventoryCrop(r)),
+          ]
+            .filter(Boolean)
+            .map((crop) => formatCropLabel(String(crop)))
+        )
+      ).sort((a, b) => a.localeCompare(b)),
+    [staffRows, salesOrders, productionInventory]
+  );
+
+  const uniqueTowers = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [...staffRows.map((r) => getStaffTower(r)), ...productionInventory.map((r) => getInventoryTower(r))].filter(
+            Boolean
+          )
+        )
+      ).sort(),
+    [staffRows, productionInventory]
+  );
+
+  const uniqueCustomers = useMemo(
+    () => Array.from(new Set(salesOrders.map((r) => getOrderCustomer(r)).filter(Boolean))).sort(),
+    [salesOrders]
+  );
+
+  const uniqueOrderStatuses = useMemo(
+    () => Array.from(new Set(salesOrders.map((r) => getOrderStatus(r)).filter(Boolean))).sort(),
+    [salesOrders]
+  );
 
   return (
     <div style={pageStyle}>
