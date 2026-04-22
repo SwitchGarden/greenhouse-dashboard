@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type PageKey = "dashboard" | "inventory" | "staffDaily";
 
@@ -491,6 +491,7 @@ export default function App() {
   const [productionInventory, setProductionInventory] = useState<ProductionInventoryRow[]>([]);
 
   const [message, setMessage] = useState("");
+  const ordersSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Quick Action form
   const [mode, setMode] = useState("Harvest");
@@ -584,6 +585,7 @@ export default function App() {
   const [harvestNote, setHarvestNote] = useState("");
   const [staffLookupCrop, setStaffLookupCrop] = useState("");
   const [quickEntryUnitType, setQuickEntryUnitType] = useState<OrderUnitType>("Lbs");
+  const [quickHarvestType, setQuickHarvestType] = useState<"Full Harvest" | "Trim Harvest">("Full Harvest");
 
   // Transplant form
   const [transplantRowNumber, setTransplantRowNumber] = useState("");
@@ -846,6 +848,7 @@ export default function App() {
 
   const filteredSavedOrders = useMemo(() => {
     return salesOrders
+      .filter((row) => normalizeStatus(getOrderStatus(row)) !== "cancelled")
       .filter((row) => (savedOrderStatusFilter === "All" ? true : getOrderStatus(row) === savedOrderStatusFilter))
       .filter((row) => (savedOrderCropFilter === "All" ? true : getOrderCrop(row) === savedOrderCropFilter))
       .filter((row) => (savedOrderCustomerFilter === "All" ? true : getOrderCustomer(row) === savedOrderCustomerFilter))
@@ -1451,6 +1454,122 @@ const overdueOrders = useMemo(() => {
       .slice(0, 8);
   }, [salesOrders, inventoryByCrop]);
 
+  const resetQuickActionForm = () => {
+    setTower("");
+    setCrop("");
+    setLbs("");
+    setPodsChanged("");
+    setQuickEntryUnitType("Lbs");
+    setQuickHarvestType("Full Harvest");
+    setEntryStatus("");
+    setStage("");
+    setScrapType("");
+    setNote("");
+  };
+
+  const handleQuickHarvestLikeAction = async (entryMode: "Harvest" | "Farmers Market") => {
+    if (!tower) {
+      setMessage("Please choose a tower from inventory.");
+      return;
+    }
+
+    const selected = productionInventory.find((row) => String(row.rowNumber) === String(tower));
+    if (!selected) {
+      setMessage("Selected tower was not found in production inventory.");
+      return;
+    }
+
+    const selectedCrop = getInventoryCrop(selected);
+    const outputQty = toNumber(lbs);
+    const podsWorked = toNumber(podsChanged);
+    const currentActivePods = toNumber(getInventoryActivePods(selected));
+    const currentRemainingLbs = toNumber(getInventoryRemainingExpectedLbs(selected));
+    const currentExpectedLbs = toNumber(getInventoryExpectedLbs(selected));
+    const harvestLbs = quantityToLbs(quickEntryUnitType, outputQty);
+
+    if (!outputQty || harvestLbs < 0) {
+      setMessage("Please enter harvested quantity.");
+      return;
+    }
+
+    if (!podsWorked) {
+      setMessage(quickHarvestType === "Trim Harvest" ? "Please enter how many pods were trimmed." : "Please enter how many pods were harvested.");
+      return;
+    }
+
+    if (podsWorked > currentActivePods) {
+      setMessage("You cannot harvest or trim more pods than are active.");
+      return;
+    }
+
+    if (harvestLbs > currentRemainingLbs + 0.001) {
+      setMessage("Harvested weight cannot be more than remaining harvestable pounds.");
+      return;
+    }
+
+    const isFullHarvest = quickHarvestType === "Full Harvest";
+    const newActivePods = isFullHarvest ? Math.max(0, currentActivePods - podsWorked) : currentActivePods;
+    const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - harvestLbs) * 100) / 100);
+    const isFinished = newActivePods <= 0 || newRemainingLbs <= 0.01;
+    const newStatus = isFinished ? "Harvested" : getInventoryStatus(selected) || "Active";
+    const newStage = isFinished ? "Harvested" : quickHarvestType === "Trim Harvest" ? "Trimmed" : getInventoryStage(selected) || "Ready";
+    const actionNote = [
+      quickHarvestType,
+      `${outputQty} ${getUnitLabel(quickEntryUnitType)}`,
+      isFullHarvest ? `${podsWorked} pods harvested` : `${podsWorked} pods trimmed`,
+      note,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+
+    const actionResult = await postToBackend({
+      action: "saveStaffAction",
+      mode: entryMode,
+      tower: getInventoryTower(selected),
+      crop: selectedCrop,
+      lbs: harvestLbs,
+      podsChanged: isFullHarvest ? podsWorked : "",
+      status: isFinished ? "Completed" : "Partial",
+      stage: isFinished ? "Harvested" : quickHarvestType === "Trim Harvest" ? "Trimmed" : "Ready",
+      date: entryDate || formatDateInput(new Date()),
+      scrapType: "",
+      note: actionNote,
+    });
+
+    if (!actionResult.ok) {
+      setMessage(actionResult.message || `Unable to log ${entryMode.toLowerCase()} action.`);
+      return;
+    }
+
+    const updatedNotes = [getInventoryNotes(selected), actionNote].filter(Boolean).join(" | ");
+    const updateResult = await postToBackend({
+      action: "updateProductionInventoryRow",
+      rowNumber: selected.rowNumber,
+      tower: getInventoryTower(selected),
+      towerType: getInventoryTowerType(selected),
+      maxPods: toNumber(getInventoryMaxPods(selected)),
+      activePods: newActivePods,
+      crop: selectedCrop,
+      stage: newStage,
+      seededDate: getInventorySeededDate(selected),
+      transplantDate: getInventoryTransplantDate(selected),
+      estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
+      expectedLbs: currentExpectedLbs,
+      remainingExpectedLbs: newRemainingLbs,
+      status: newStatus,
+      notes: updatedNotes,
+    });
+
+    if (!updateResult.ok) {
+      setMessage(updateResult.message || "Unable to update production inventory row.");
+      return;
+    }
+
+    setMessage(isFinished ? `${entryMode} saved. That inventory row is complete and removed from Ready to Harvest.` : `${entryMode} saved.`);
+    resetQuickActionForm();
+    await Promise.all([loadProductionInventory(), loadStaffActions()]);
+  };
+
   const saveQuickAction = async () => {
     setMessage("");
 
@@ -1489,15 +1608,7 @@ const overdueOrders = useMemo(() => {
 
       if (result.ok) {
         setMessage("Saved to Staff_Actions.");
-        setTower("");
-        setCrop("");
-        setLbs("");
-        setPodsChanged("");
-        setQuickEntryUnitType("Lbs");
-        setEntryStatus("");
-        setStage("");
-        setScrapType("");
-        setNote("");
+        resetQuickActionForm();
         await loadStaffActions();
       } else {
         setMessage(result.message || "Unable to save entry.");
@@ -1541,6 +1652,7 @@ const overdueOrders = useMemo(() => {
     setSalesContractStartDate(formatDateInput(order.contractStartDate || order["Contract Start Date"] || ""));
     setSalesContractEndDate(formatDateInput(order.contractEndDate || order["Contract End Date"] || ""));
     setSalesSaveMessage(`Editing order #${order.rowNumber}`);
+    setTimeout(() => ordersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
   const cancelEditSalesOrder = () => {
@@ -2436,30 +2548,68 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
   return (
     <div style={pageStyle}>
+      <style>{`
+        .app-btn { transition: transform 0.08s ease, filter 0.15s ease, box-shadow 0.15s ease; }
+        .app-btn:hover { filter: brightness(0.98); }
+        .app-btn:active { transform: scale(0.98); filter: brightness(0.92); }
+        .app-btn:disabled { opacity: 0.65; cursor: not-allowed; }
+      `}</style>
       <div style={containerStyle}>
-        <header style={headerStyle}>
-          <h1 style={{ margin: 0, fontSize: "clamp(24px, 4vw, 34px)", lineHeight: 1.15 }}>
-            Switchpoint Greenhouse Dashboard
-          </h1>
-          <p style={{ margin: "10px 0 0 0", opacity: 0.9, fontSize: 15 }}>
-            Mobile-friendly operations build for dashboard, production inventory, and staff daily tasks.
-          </p>
-        </header>
+       <header
+  style={{
+    ...headerStyle,
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 16,
+    flexWrap: "wrap",
+  }}
+>
+  <div style={{ minWidth: 0, flex: "1 1 420px" }}>
+    <h1 style={{ margin: 0, fontSize: "clamp(24px, 4vw, 34px)", lineHeight: 1.15 }}>
+      Switchpoint Greenhouse Dashboard
+    </h1>
+    <p style={{ margin: "10px 0 0 0", opacity: 0.9, fontSize: 15 }}>
+      Mobile-friendly operations build for dashboard, production inventory, and staff daily tasks.
+    </p>
+  </div>
+
+  <div
+    style={{
+      flex: "0 0 auto",
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "flex-end",
+    }}
+  >
+    <img
+      src="/gardennobkgd.png"
+      alt="Switchpoint Garden"
+      style={{
+        height: 112,
+        width: "auto",
+        display: "block",
+        maxWidth: "100%",
+        objectFit: "contain",
+      }}
+    />
+  </div>
+</header>
 
         <div style={navWrapStyle}>
           <div style={navButtonsStyle}>
-            <button onClick={() => setActivePage("dashboard")} style={activePage === "dashboard" ? navButtonActiveStyle : navButtonStyle}>
+            <button className="app-btn" onClick={() => setActivePage("dashboard")} style={activePage === "dashboard" ? navButtonActiveStyle : navButtonStyle}>
               Dashboard
             </button>
-            <button onClick={() => setActivePage("inventory")} style={activePage === "inventory" ? navButtonActiveStyle : navButtonStyle}>
+            <button className="app-btn" onClick={() => setActivePage("inventory")} style={activePage === "inventory" ? navButtonActiveStyle : navButtonStyle}>
               Production Inventory
             </button>
-            <button onClick={() => setActivePage("staffDaily")} style={activePage === "staffDaily" ? navButtonActiveStyle : navButtonStyle}>
+            <button className="app-btn" onClick={() => setActivePage("staffDaily")} style={activePage === "staffDaily" ? navButtonActiveStyle : navButtonStyle}>
               Staff Daily
             </button>
           </div>
 
-          <button onClick={loadAllData} style={secondaryButtonStyle}>
+          <button className="app-btn" onClick={loadAllData} style={secondaryButtonStyle}>
             {loadingData ? "Refreshing..." : "Refresh Data"}
           </button>
         </div>
@@ -2585,7 +2735,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 </TableScroll>
               </Panel>
 
-              <Panel title="Sales Planner / Order Planner">
+              <div ref={ordersSectionRef}><Panel title="Sales Planner / Order Planner">
                 <FormGrid columns={2}>
                   <Field label="Customer">
                     <input value={salesCustomer} onChange={(e) => setSalesCustomer(e.target.value)} style={inputStyle} />
@@ -2664,12 +2814,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
                   {!editingSalesOrderRowNumber && (
-                    <button onClick={addCurrentLineToBatch} style={secondaryButtonStyle}>
+                    <button className="app-btn" onClick={addCurrentLineToBatch} style={secondaryButtonStyle}>
                       Add Line Item
                     </button>
                   )}
                   {editingSalesOrderRowNumber ? (
-                    <button onClick={cancelEditSalesOrder} style={secondaryButtonStyle}>
+                    <button className="app-btn" onClick={cancelEditSalesOrder} style={secondaryButtonStyle}>
                       Cancel Edit
                     </button>
                   ) : null}
@@ -2696,7 +2846,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                             <td style={tdStyle}>{quantityToLbs(line.unitType, toNumber(line.quantityNeeded))}</td>
                             {!editingSalesOrderRowNumber && (
                               <td style={tdStyle}>
-                                <button onClick={() => removeDraftOrderLine(line.id)} style={secondaryButtonStyle}>Remove</button>
+                                <button className="app-btn" onClick={() => removeDraftOrderLine(line.id)} style={secondaryButtonStyle}>Remove</button>
                               </td>
                             )}
                           </tr>
@@ -2707,11 +2857,11 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 )}
 
                 <ActionRow message={salesSaveMessage}>
-                  <button onClick={handleSaveOrder} style={primaryButtonStyle} disabled={salesSaving}>
+                  <button className="app-btn" onClick={handleSaveOrder} style={primaryButtonStyle} disabled={salesSaving}>
                     {salesSaving ? "Saving..." : editingSalesOrderRowNumber ? "Update Order" : "Save Order"}
                   </button>
                 </ActionRow>
-              </Panel>
+              </Panel></div>
             </ResponsiveTwoPanelGrid>
 
             <div style={sectionStackStyle}>
@@ -2867,7 +3017,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                               <select
                                 value={getOrderStatus(order) || "Planned"}
                                 onChange={(e) => handleOrderStatusChange(order.rowNumber, e.target.value)}
-                                style={compactInputStyle}
+                                style={{ ...compactInputStyle, minWidth: 132 }}
                               >
                                 <option value="Planned">Planned</option>
                                 <option value="In Progress">In Progress</option>
@@ -2879,8 +3029,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                             </td>
                             <td style={tdStyle}>
                               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                <button onClick={() => startEditSalesOrder(order)} style={primaryButtonStyle}>Edit</button>
-                                <button onClick={() => handleCancelSalesOrder(order.rowNumber)} style={secondaryButtonStyle}>Cancel</button>
+                                <button className="app-btn" onClick={() => startEditSalesOrder(order)} style={primaryButtonStyle}>Edit</button>
+                                <button className="app-btn" onClick={() => handleCancelSalesOrder(order.rowNumber)} style={secondaryButtonStyle}>Cancel</button>
                               </div>
                             </td>
                           </tr>
@@ -2988,7 +3138,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               </Field>
 
               <ActionRow message={inventoryMessage}>
-                <button onClick={handleSaveInventory} style={primaryButtonStyle} disabled={inventorySaving}>
+                <button className="app-btn" onClick={handleSaveInventory} style={primaryButtonStyle} disabled={inventorySaving}>
                   {inventorySaving ? "Saving..." : "Save Production Inventory"}
                 </button>
               </ActionRow>
@@ -3087,10 +3237,10 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               </Field>
 
               <ActionRow message={editInventoryMessage}>
-                <button onClick={handleSaveInventoryEdits} style={primaryButtonStyle} disabled={editInventorySaving}>
+                <button className="app-btn" onClick={handleSaveInventoryEdits} style={primaryButtonStyle} disabled={editInventorySaving}>
                   {editInventorySaving ? "Saving..." : "Save Changes"}
                 </button>
-                <button onClick={clearEditInventoryForm} style={secondaryButtonStyle}>
+                <button className="app-btn" onClick={clearEditInventoryForm} style={secondaryButtonStyle}>
                   Clear
                 </button>
               </ActionRow>
@@ -3137,13 +3287,15 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               </Field>
 
               <ActionRow message={adjustMessage}>
-                <button onClick={handleInventoryAdjustment} style={primaryButtonStyle}>
+                <button className="app-btn" onClick={handleInventoryAdjustment} style={primaryButtonStyle}>
                   Save Inventory Adjustment
                 </button>
               </ActionRow>
             </Panel>
 
             <Panel title="Current Production Inventory">
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>Showing 20 visible rows. Scroll to see the rest.</div>
+              <div style={{ maxHeight: 860, overflowY: "auto", overflowX: "hidden", border: "1px solid #e5e7eb", borderRadius: 10 }}>
               <TableScroll>
                 <table style={tableStyle}>
                   <thead>
@@ -3192,7 +3344,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                               <select
                                 value={getInventoryStatus(item) || "Active"}
                                 onChange={(e) => handleProductionStatusChange(item.rowNumber, e.target.value)}
-                                style={compactInputStyle}
+                                style={{ ...compactInputStyle, minWidth: 132 }}
                               >
                                 <option value="Active">Active</option>
                                 <option value="Harvested">Harvested</option>
@@ -3203,7 +3355,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                             </td>
                             <td style={tdStyle}>{getInventoryNotes(item)}</td>
                             <td style={tdStyle}>
-                              <button onClick={() => handleEditInventory(item)} style={primaryButtonStyle}>
+                              <button className="app-btn" onClick={() => handleEditInventory(item)} style={primaryButtonStyle}>
                                 Edit
                               </button>
                             </td>
@@ -3213,6 +3365,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   </tbody>
                 </table>
               </TableScroll>
+              </div>
             </Panel>
           </div>
         )}
@@ -3269,13 +3422,38 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                       <option value="Scrapped">Scrapped</option>
                       <option value="Seed">Seed</option>
                       <option value="Transplant">Transplant</option>
-                      <option value="Pack">Pack</option>
                     </select>
                   </Field>
 
-                  <Field label="Tower">
-                    <input value={tower} onChange={(e) => setTower(e.target.value)} style={inputStyle} placeholder="R1" />
-                  </Field>
+                  {mode !== "Seed" ? (
+                    <Field label="Tower">
+                      <select
+                        value={tower}
+                        onChange={(e) => {
+                          const selectedRow = productionInventory.find((row) => String(row.rowNumber) === e.target.value);
+                          setTower(e.target.value);
+                          if (selectedRow) {
+                            setCrop(getInventoryCrop(selectedRow));
+                            if (mode === "Harvest" || mode === "Farmers Market") {
+                              setQuickHarvestType(isRepeatHarvestCrop(getInventoryCrop(selectedRow)) ? "Trim Harvest" : "Full Harvest");
+                            }
+                          }
+                        }}
+                        style={inputStyle}
+                      >
+                        <option value="">Select Tower From Inventory</option>
+                        {productionInventory.slice().sort(sortInventoryByTowerLayout).map((item) => (
+                          <option key={item.rowNumber} value={String(item.rowNumber)}>
+                            {getInventoryTower(item)} - {getInventoryCrop(item)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  ) : (
+                    <Field label="Seeded Date">
+                      <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
+                    </Field>
+                  )}
 
                   <Field label="Crop">
                     <select value={crop} onChange={(e) => setCrop(e.target.value)} style={inputStyle}>
@@ -3288,38 +3466,85 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     </select>
                   </Field>
 
-                  <Field label={quickEntryUnitType === "Plants" ? "Plants / Pods" : quickEntryUnitType === "Lbs" ? "Lbs" : `Qty (${quickEntryUnitType})`}>
-                    <input value={lbs} onChange={(e) => setLbs(e.target.value)} style={inputStyle} placeholder="12" />
-                  </Field>
+                  {(mode === "Harvest" || mode === "Farmers Market") ? (
+                    <>
+                      <Field label="Harvest Type">
+                        <select value={quickHarvestType} onChange={(e) => setQuickHarvestType(e.target.value as "Full Harvest" | "Trim Harvest")} style={inputStyle}>
+                          <option value="Full Harvest">Full Harvest</option>
+                          <option value="Trim Harvest">Trim Harvest</option>
+                        </select>
+                      </Field>
 
-                  <Field label="Entry Unit">
-                    <select value={quickEntryUnitType} onChange={(e) => setQuickEntryUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
-                      <option value="Lbs">Lbs</option>
-                      <option value="Plants">Plants</option>
-                      <option value="6oz Bag">6oz Bag</option>
-                      <option value="6oz Clamshell">6oz Clamshell</option>
-                    </select>
-                  </Field>
+                      <Field label={quickHarvestType === "Trim Harvest" ? "Pods Trimmed" : "Pods Harvested"}>
+                        <input value={podsChanged} onChange={(e) => setPodsChanged(e.target.value)} style={inputStyle} placeholder="20" />
+                      </Field>
 
-                  <Field label="Pods Changed">
-                    <input value={podsChanged} onChange={(e) => setPodsChanged(e.target.value)} style={inputStyle} placeholder="20" />
-                  </Field>
+                      <Field label="Output Unit">
+                        <select value={quickEntryUnitType} onChange={(e) => setQuickEntryUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
+                          <option value="Lbs">Lbs</option>
+                          <option value="6oz Bag">6oz Bag</option>
+                          <option value="6oz Clamshell">6oz Clamshell</option>
+                        </select>
+                      </Field>
 
-                  <Field label="Status">
-                    <input value={entryStatus} onChange={(e) => setEntryStatus(e.target.value)} style={inputStyle} placeholder="Completed" />
-                  </Field>
+                      <Field label="Harvested Qty">
+                        <input value={lbs} onChange={(e) => setLbs(e.target.value)} style={inputStyle} placeholder="12" />
+                      </Field>
 
-                  <Field label="Stage">
-                    <input value={stage} onChange={(e) => setStage(e.target.value)} style={inputStyle} placeholder="Growing / Ready" />
-                  </Field>
+                      <Field label="Harvested Lbs">
+                        <input value={String(quantityToLbs(quickEntryUnitType, toNumber(lbs)))} readOnly style={{ ...inputStyle, background: "#f1f5f9" }} />
+                      </Field>
 
-                  <Field label="Date">
-                    <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
-                  </Field>
+                      <Field label="Date">
+                        <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
+                      </Field>
+                    </>
+                  ) : mode === "Scrapped" ? (
+                    <>
+                      <Field label={quickEntryUnitType === "Plants" ? "Plants / Pods" : quickEntryUnitType === "Lbs" ? "Lbs" : `Qty (${quickEntryUnitType})`}>
+                        <input value={lbs} onChange={(e) => setLbs(e.target.value)} style={inputStyle} placeholder="12" />
+                      </Field>
 
-                  <Field label="Scrap Type">
-                    <input value={scrapType} onChange={(e) => setScrapType(e.target.value)} style={inputStyle} placeholder="Disease / Damage" />
-                  </Field>
+                      <Field label="Entry Unit">
+                        <select value={quickEntryUnitType} onChange={(e) => setQuickEntryUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
+                          <option value="Lbs">Lbs</option>
+                          <option value="Plants">Plants</option>
+                          <option value="6oz Bag">6oz Bag</option>
+                          <option value="6oz Clamshell">6oz Clamshell</option>
+                        </select>
+                      </Field>
+
+                      <Field label="Pods Changed">
+                        <input value={podsChanged} onChange={(e) => setPodsChanged(e.target.value)} style={inputStyle} placeholder="20" />
+                      </Field>
+
+                      <Field label="Date">
+                        <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
+                      </Field>
+
+                      <Field label="Scrap Type">
+                        <input value={scrapType} onChange={(e) => setScrapType(e.target.value)} style={inputStyle} placeholder="Disease / Damage" />
+                      </Field>
+                    </>
+                  ) : (
+                    <>
+                      <Field label="Status">
+                        <input value={entryStatus} onChange={(e) => setEntryStatus(e.target.value)} style={inputStyle} placeholder="Completed" />
+                      </Field>
+
+                      <Field label="Stage">
+                        <input value={stage} onChange={(e) => setStage(e.target.value)} style={inputStyle} placeholder="Growing / Ready" />
+                      </Field>
+
+                      <Field label="Date">
+                        <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
+                      </Field>
+
+                      <Field label="Scrap Type">
+                        <input value={scrapType} onChange={(e) => setScrapType(e.target.value)} style={inputStyle} placeholder="Disease / Damage" />
+                      </Field>
+                    </>
+                  )}
                 </FormGrid>
 
                 <Field label="Note">
@@ -3327,7 +3552,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 </Field>
 
                 <ActionRow message={message}>
-                  <button onClick={saveQuickAction} style={primaryButtonStyle}>
+                  <button className="app-btn" onClick={saveQuickAction} style={primaryButtonStyle}>
                     Save to Staff_Actions
                   </button>
                 </ActionRow>
@@ -3389,7 +3614,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     </select>
                   </td>
                   <td style={tdStyle}>
-                    <button onClick={() => handleMarkPlanted(task)} style={primaryButtonStyle}>
+                    <button className="app-btn" onClick={() => handleMarkPlanted(task)} style={primaryButtonStyle}>
                       Mark Planted
                     </button>
                   </td>
@@ -3519,7 +3744,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       </Field>
 
       <ActionRow message={dailyMessage}>
-        <button onClick={handleMarkTransplanted} style={primaryButtonStyle}>
+        <button className="app-btn" onClick={handleMarkTransplanted} style={primaryButtonStyle}>
           Mark Transplanted
         </button>
       </ActionRow>
@@ -3562,7 +3787,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                         <td style={tdStyle}>{getInventoryRemainingExpectedLbs(item)}</td>
                         <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
                         <td style={tdStyle}>
-                          <button onClick={() => startReadyHarvestAction(item)} style={primaryButtonStyle}>
+                          <button className="app-btn" onClick={() => startReadyHarvestAction(item)} style={primaryButtonStyle}>
                             Mark Harvested
                           </button>
                         </td>
@@ -3598,8 +3823,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                               <input value={harvestNote} onChange={(e) => setHarvestNote(e.target.value)} style={compactInputStyle} />
                             </Field>
                             <ActionRow message={dailyMessage}>
-                              <button onClick={handleReadyHarvestSubmit} style={primaryButtonStyle}>Save Harvest</button>
-                              <button onClick={clearReadyHarvestAction} style={secondaryButtonStyle}>Cancel</button>
+                              <button className="app-btn" onClick={handleReadyHarvestSubmit} style={primaryButtonStyle}>Save Harvest</button>
+                              <button className="app-btn" onClick={clearReadyHarvestAction} style={secondaryButtonStyle}>Cancel</button>
                             </ActionRow>
                           </td>
                         </tr>
@@ -3646,7 +3871,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   <td style={tdStyle}>{formatDateDisplay(task.dueDate)}</td>
                   <td style={tdStyle}>{task.status}</td>
                   <td style={tdStyle}>
-                    <button onClick={() => handleMarkPacked(task)} style={primaryButtonStyle}>
+                    <button className="app-btn" onClick={() => handleMarkPacked(task)} style={primaryButtonStyle}>
                       Mark Packed
                     </button>
                   </td>
