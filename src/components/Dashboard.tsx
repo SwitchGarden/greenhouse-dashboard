@@ -423,7 +423,7 @@ export function Dashboard({
 
       <div style={sectionStackStyle}>
         <Panel title="Saved Orders">
-          <FormGrid columns={4}>
+          <FormGrid columns={3}>
             <Field label="Status Filter">
               <select value={savedOrderStatusFilter} onChange={(e) => setSavedOrderStatusFilter(e.target.value)} style={inputStyle}>
                 <option value="All">All</option>
