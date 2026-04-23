@@ -1162,13 +1162,14 @@ const plantTodayTasks = useMemo(() => {
     const ck = cropAliases[normalizeCropKey(rawCropName)] || normalizeCropKey(rawCropName);
     if (isRepeatHarvestCrop(ck)) continue;
     const stage = normalizeStatus(getInventoryStage(item));
-    if (!["transplanted", "growing", "ready"].includes(stage)) continue;
+    if (!["seeded", "transplanted", "growing", "ready"].includes(stage)) continue;
     const activePods = toNumber(getInventoryActivePods(item));
     const remainingLbs = toNumber(getInventoryRemainingExpectedLbs(item));
     if (activePods <= 0) continue;
     const readyDate = getInventoryEffectiveReadyDate(item);
+    if (!readyDate) continue; // seeded items without a ready date can't satisfy demand
     // Already-past-ready towers count as available starting today
-    const effectiveDate = readyDate && readyDate <= today ? today : (readyDate || today);
+    const effectiveDate = readyDate <= today ? today : readyDate;
     const pool = cropPools.get(ck) || { readyLbs: 0, readyPlants: 0, futureEntries: [] };
     pool.futureEntries.push({ readyDate: effectiveDate, lbs: remainingLbs, plants: activePods });
     cropPools.set(ck, pool);
