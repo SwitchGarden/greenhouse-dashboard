@@ -370,6 +370,31 @@ const addDays = (dateString: string, days: number) => {
   return date.toISOString().slice(0, 10);
 };
 
+const printSection = (title: string, headers: string[], rows: string[][]) => {
+  const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const headerHtml = headers.map(h => `<th>${h}</th>`).join("");
+  const rowsHtml = rows.map(row =>
+    `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`
+  ).join("");
+  const html = `<!DOCTYPE html><html><head><title>${title}</title><style>
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #000; margin: 20px; }
+    h2 { margin: 0 0 4px 0; font-size: 16px; }
+    .date { color: #555; font-size: 11px; margin-bottom: 14px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #0f172a; color: #fff; padding: 7px 10px; text-align: left; font-size: 11px; }
+    td { padding: 7px 10px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    @media print { button { display: none; } }
+  </style></head><body>
+    <h2>${title}</h2>
+    <div class="date">${today}</div>
+    <table><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table>
+    <script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); }<\/script>
+  </body></html>`;
+  const w = window.open("", "_blank");
+  if (w) { w.document.write(html); w.document.close(); }
+};
+
 const getStartOfWeek = (date: Date) => {
   const d = new Date(date);
   const day = d.getDay();
@@ -4000,12 +4025,37 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     <Panel title="Seed Today / Seeding Schedule">
       <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: "#64748b" }}>Default view shows what needs to be seeded today.</div>
-        <select value={seedScheduleFilter} onChange={(e) => setSeedScheduleFilter(e.target.value as "Today" | "This Week" | "This Month" | "3 Months")} style={{ ...inputStyle, width: "auto", minWidth: 140, flex: "0 0 auto" }}>
-          <option value="Today">Today</option>
-          <option value="This Week">This Week</option>
-          <option value="This Month">This Month</option>
-          <option value="3 Months">3 Months</option>
-        </select>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <select value={seedScheduleFilter} onChange={(e) => setSeedScheduleFilter(e.target.value as "Today" | "This Week" | "This Month" | "3 Months")} style={{ ...inputStyle, width: "auto", minWidth: 140 }}>
+            <option value="Today">Today</option>
+            <option value="This Week">This Week</option>
+            <option value="This Month">This Month</option>
+            <option value="3 Months">3 Months</option>
+          </select>
+          <button
+            style={secondaryButtonStyle}
+            onClick={() => printSection(
+              `Seeding Schedule — ${seedScheduleFilter}`,
+              ["Seed By", "Status", "Crop", "Trays Needed", "Ready By", "Orders"],
+              filteredPlantTodayTasks.map(task => {
+                const displaySeedByDate = task.seedByDate && task.seedByDate < formatDateInput(new Date()) ? formatDateInput(new Date()) : task.seedByDate;
+                const full = Math.floor(task.totalTowers / 2);
+                const half = task.totalTowers % 2;
+                const trays = full > 0 && half > 0 ? `${full} full + 1 half` : full > 0 ? `${full} full` : `${half} half`;
+                return [
+                  formatDateDisplay(displaySeedByDate),
+                  task.urgency,
+                  task.crop,
+                  trays,
+                  formatDateDisplay(task.earliestDueDate),
+                  task.orders.join(", "),
+                ];
+              })
+            )}
+          >
+            🖨 Print
+          </button>
+        </div>
       </div>
       <TableScroll>
         <table style={tableStyle}>
@@ -4300,6 +4350,25 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
 
     <Panel title="Pack Today">
+      <div style={{ marginBottom: 12, display: "flex", justifyContent: "flex-end" }}>
+        <button
+          style={secondaryButtonStyle}
+          onClick={() => printSection(
+            "Pack Today",
+            ["Customer", "Crop", "Unit", "Qty to Pack", "Due Date", "Status"],
+            packTodayTasks.map(task => [
+              task.customer,
+              task.crop,
+              task.unitType,
+              String(task.quantityNeeded),
+              formatDateDisplay(task.dueDate),
+              task.status,
+            ])
+          )}
+        >
+          🖨 Print
+        </button>
+      </div>
       <TableScroll>
         <table style={tableStyle}>
           <thead>
