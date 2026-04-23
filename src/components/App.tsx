@@ -647,7 +647,7 @@ export default function App() {
   const [harvestNote, setHarvestNote] = useState("");
   const [staffLookupCrop, setStaffLookupCrop] = useState("");
   const [quickEntryUnitType, setQuickEntryUnitType] = useState<OrderUnitType>("Lbs");
-  const [seedScheduleFilter, setSeedScheduleFilter] = useState<"Today" | "This Week" | "This Month">("Today");
+  const [seedScheduleFilter, setSeedScheduleFilter] = useState<"Today" | "This Week" | "This Month" | "3 Months">("Today");
 
   // Transplant form
   const [transplantRowNumber, setTransplantRowNumber] = useState("");
@@ -1224,6 +1224,8 @@ const filteredPlantTodayTasks = useMemo(() => {
   const weekEnd = getEndOfWeek(today);
   const monthEnd = new Date(today);
   monthEnd.setMonth(monthEnd.getMonth() + 1);
+  const threeMonthEnd = new Date(today);
+  threeMonthEnd.setMonth(threeMonthEnd.getMonth() + 3);
 
   const normalizeSeedDate = (seedByDate: string) => {
     const parsed = new Date(seedByDate || today.toISOString());
@@ -1238,6 +1240,9 @@ const filteredPlantTodayTasks = useMemo(() => {
     }
     if (seedScheduleFilter === "This Week") {
       return compareDate >= today && compareDate <= weekEnd;
+    }
+    if (seedScheduleFilter === "3 Months") {
+      return compareDate >= today && compareDate <= threeMonthEnd;
     }
     return compareDate >= today && compareDate <= monthEnd;
   });
@@ -3715,10 +3720,11 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     <Panel title="Seed Today / Seeding Schedule">
       <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: "#64748b" }}>Default view shows what needs to be seeded today.</div>
-        <select value={seedScheduleFilter} onChange={(e) => setSeedScheduleFilter(e.target.value as "Today" | "This Week" | "This Month")} style={{ ...inputStyle, width: "auto", minWidth: 140, flex: "0 0 auto" }}>
+        <select value={seedScheduleFilter} onChange={(e) => setSeedScheduleFilter(e.target.value as "Today" | "This Week" | "This Month" | "3 Months")} style={{ ...inputStyle, width: "auto", minWidth: 140, flex: "0 0 auto" }}>
           <option value="Today">Today</option>
           <option value="This Week">This Week</option>
           <option value="This Month">This Month</option>
+          <option value="3 Months">3 Months</option>
         </select>
       </div>
       <TableScroll>
