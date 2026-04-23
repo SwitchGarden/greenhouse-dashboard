@@ -360,6 +360,53 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 480px) {
+  .page-shell {
+    padding: 10px 8px;
+  }
+
+  .panel-card {
+    padding: 14px 12px;
+    border-radius: 12px;
+  }
+
+  .section-title-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .section-title-row h2 {
+    font-size: 1.05rem;
+  }
+
+  .mode-chip {
+    padding: 8px 10px;
+    font-size: 0.78rem;
+  }
+
+  .quick-actions {
+    gap: 8px;
+  }
+
+  .summary-value {
+    font-size: 1.6rem;
+  }
+
+  .summary-card {
+    padding: 14px;
+  }
+
+  .primary-btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  .footer-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
 /* FILTER PANEL FIX */
 .filters-stack {
   display: grid;

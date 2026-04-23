@@ -1,142 +1,547 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useInventoryForm } from "../hooks/useInventoryForm";
-import { useEditInventoryForm } from "../hooks/useEditInventoryForm";
-import { useHarvestForm } from "../hooks/useHarvestForm";
-import { Dashboard } from "./Dashboard";
-import { ProductionInventory } from "./ProductionInventory";
-import { StaffDaily } from "./StaffDaily";
-import type {
-  PageKey,
-  StaffActionRow,
-  SalesOrderRow,
-  ProductionInventoryRow,
-  OrderUnitType,
-  SalesPlannerResult,
-  DraftOrderLine,
-  CropInventoryEntry,
-} from "../lib/types";
-import {
-  makeId,
-  isContainerUnit,
-  quantityToLbs,
-  availableLbsToUnitQty,
-  getUnitLabel,
-  isRepeatHarvestCrop,
-  CROP_PROFILES,
-  normalizeCropKey,
-  cropAliases,
-  getCropProfile,
-  formatCropLabel,
-  getExpectedLbs,
-  calculateExpectedLbs,
-  SIX_OZ_IN_LBS,
-  SMALL_BAG_OZ_IN_LBS,
-  REPEAT_HARVEST_CROPS,
-  MAX_TRIMS,
-  TRIM_REGROWTH_DAYS,
-} from "../lib/utils/cropUtils";
-import {
-  toNumber,
-  normalizeStatus,
-  validateTowerName,
-  getTowerMaxPods,
-  TOWER_ROW_ORDER,
-  parseTowerForSort,
-  sortInventoryByTowerLayout,
-  getInventoryTower,
-  getInventoryTowerType,
-  getInventoryMaxPods,
-  getInventoryActivePods,
-  getInventoryCrop,
-  getInventoryStage,
-  getInventorySeededDate,
-  getInventoryTransplantDate,
-  getInventoryEstimatedReadyDate,
-  getInventoryEffectiveReadyDate,
-  getInventoryExpectedLbs,
-  getInventoryRemainingExpectedLbs,
-  getInventoryStatus,
-  getInventoryNotes,
-  getInventoryTrimCount,
-} from "../lib/utils/inventoryUtils";
-import {
-  getOrderCustomer,
-  getOrderCrop,
-  getOrderUnitType,
-  getOrderQuantityNeeded,
-  getOrderRequestedDeliveryDate,
-  getOrderPipelineTowers,
-  getOrderNewTowersToPlant,
-  getOrderEstimatedReadyDate,
-  getOrderStatus,
-  getOrderType,
-  getOrderFrequency,
-  getOrderContractEndDate,
-} from "../lib/utils/orderUtils";
-import {
-  getStaffMode,
-  getStaffTower,
-  getStaffCrop,
-  getStaffLbs,
-  getStaffPodsChanged,
-  getStaffNote,
-  getStaffTimestamp,
-  getStaffDate,
-} from "../lib/utils/staffUtils";
-import {
-  formatDateInput,
-  formatDateDisplay,
-  formatDateTimeDisplay,
-  addDays,
-  getStartOfWeek,
-  getEndOfWeek,
-  generateRecurringDates,
-  isDueTodayOrTomorrow,
-  isDueToday,
-  isOverdue,
-} from "../lib/utils/dateUtils";
-import { postToBackend } from "../lib/api";
-import { buildCropPools, allocateOrderAgainstPool } from "../lib/utils/demandUtils";
-import {
-  Panel,
-  Field,
-  ActionRow,
-  TableScroll,
-  StatCard,
-  MiniMetric,
-  ResponsiveStatGrid,
-  ResponsiveTwoPanelGrid,
-  FormGrid,
-  MetricGrid,
-} from "./ui";
-import {
-  pageStyle,
-  containerStyle,
-  headerStyle,
-  navWrapStyle,
-  navButtonsStyle,
-  navButtonStyle,
-  navButtonActiveStyle,
-  primaryButtonStyle,
-  secondaryButtonStyle,
-  sectionStackStyle,
-  inputStyle,
-  compactInputStyle,
-  textareaStyle,
-  tableStyle,
-  thStyle,
-  tdStyle,
-} from "../lib/styles";
+
+type PageKey = "dashboard" | "inventory" | "staffDaily";
+
+type StaffActionRow = {
+  rowNumber: number;
+  Timestamp?: string;
+  Mode?: string;
+  Tower?: string;
+  Crop?: string;
+  Lbs?: number | string;
+  LBS?: number | string;
+  "Pods Changed"?: number | string;
+  Status?: string;
+  Stage?: string;
+  Date?: string;
+  "Scrap Type"?: string;
+  Note?: string;
+  timestamp?: string;
+  mode?: string;
+  tower?: string;
+  crop?: string;
+  lbs?: number | string;
+  podsChanged?: number | string;
+  status?: string;
+  stage?: string;
+  date?: string;
+  scrapType?: string;
+  note?: string;
+};
+
+type SalesOrderRow = {
+  rowNumber: number;
+  Timestamp?: string;
+  Customer?: string;
+  Crop?: string;
+  "Unit Type"?: string;
+  "Quantity Needed"?: number | string;
+  "Requested Delivery Date"?: string;
+  "Available Qty"?: number | string;
+  "Shortage Qty"?: number | string;
+  "Towers Needed"?: number | string;
+  "Pipeline Towers"?: number | string;
+  "New Towers To Plant"?: number | string;
+  "Estimated Ready Date"?: string;
+  Feasible?: string;
+  Notes?: string;
+  Status?: string;
+  "Order Type"?: string;
+  Frequency?: string;
+  "Contract Start Date"?: string;
+  "Contract End Date"?: string;
+  timestamp?: string;
+  customer?: string;
+  crop?: string;
+  unitType?: string;
+  quantityNeeded?: number | string;
+  requestedDeliveryDate?: string;
+  availableQty?: number | string;
+  shortageQty?: number | string;
+  towersNeeded?: number | string;
+  pipelineTowers?: number | string;
+  newTowersToPlant?: number | string;
+  estimatedReadyDate?: string;
+  feasible?: string;
+  notes?: string;
+  status?: string;
+  orderType?: string;
+  frequency?: string;
+  contractStartDate?: string;
+  contractEndDate?: string;
+};
+
+type ProductionInventoryRow = {
+  rowNumber: number;
+  Timestamp?: string;
+  Tower?: string;
+  "Tower Type"?: string;
+  "Max Pods"?: number | string;
+  "Active Pods"?: number | string;
+  Crop?: string;
+  Stage?: string;
+  "Seeded Date"?: string;
+  "Transplant Date"?: string;
+  "Estimated Ready Date"?: string;
+  "Expected Lbs"?: number | string;
+  "Remaining Expected Lbs"?: number | string;
+  Status?: string;
+  Notes?: string;
+  timestamp?: string;
+  tower?: string;
+  towerType?: string;
+  maxPods?: number | string;
+  activePods?: number | string;
+  crop?: string;
+  stage?: string;
+  seededDate?: string;
+  transplantDate?: string;
+  estimatedReadyDate?: string;
+  expectedLbs?: number | string;
+  remainingExpectedLbs?: number | string;
+  status?: string;
+  notes?: string;
+  harvestType?: string;
+  "Harvest Type"?: string;
+};
+
+type OrderUnitType = "Lbs" | "Plants" | "6oz Bag" | "6oz Clamshell" | "0.75oz Small Bag";
+
+type SalesPlannerResult = {
+  availableQty: number;
+  shortageQty: number;
+  towersNeeded: number;
+  pipelineTowers: number;
+  newTowersToPlant: number;
+  estimatedReadyDate: string;
+  deliveryFeasible: boolean;
+  unitLabel: string;
+  qtyNeededInLbs: number;
+};
+
+type DraftOrderLine = {
+  id: string;
+  crop: string;
+  unitType: OrderUnitType;
+  quantityNeeded: string;
+};
+
+const API_URL = import.meta.env.VITE_API_BASE_URL;
+
+const SIX_OZ_IN_LBS = 6 / 16;
+const SMALL_BAG_OZ_IN_LBS = 0.75 / 16;
+const MAX_TRIMS = 5;
+const TRIM_REGROWTH_DAYS = 21;
+const FULL_TRAY_SEEDS = 88;   // one full tray → 2 Low Density towers
+const HALF_TRAY_SEEDS = 44;   // one half tray → 1 Low Density tower
+
+const REPEAT_HARVEST_CROPS = new Set([
+  "arugula", "basil", "thai_basil", "mint", "kale", "brassica",
+  "red_mizuna", "green_mizuna", "swiss_chard", "dill", "five_star", "wild_fire",
+]);
+
+// Salad mix recipes: crop key → array of { crop (normalized key), oz per clamshell }
+const SALAD_MIX_RECIPES: Record<string, Array<{ crop: string; oz: number }>> = {
+  sunset_mix: [
+    { crop: "brassica", oz: 2 },
+    { crop: "red_mizuna", oz: 1 },
+    { crop: "green_mizuna", oz: 1 },
+    { crop: "swiss_chard", oz: 1 },
+    { crop: "oakleaf", oz: 1 },
+  ],
+  salad_mix: [
+    { crop: "brassica", oz: 2 },
+    { crop: "kale", oz: 1 },
+    { crop: "mizuna", oz: 1 },
+    { crop: "muir", oz: 2 },
+  ],
+};
+
+const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+const isContainerUnit = (unitType: string) => unitType === "6oz Bag" || unitType === "6oz Clamshell" || unitType === "0.75oz Small Bag";
+
+const quantityToLbs = (unitType: string, quantity: number) => {
+  if (unitType === "Plants") return 0;
+  if (unitType === "0.75oz Small Bag") return Math.round(quantity * SMALL_BAG_OZ_IN_LBS * 100) / 100;
+  if (isContainerUnit(unitType)) return Math.round(quantity * SIX_OZ_IN_LBS * 100) / 100;
+  return Math.round(quantity * 100) / 100;
+};
+
+const availableLbsToUnitQty = (unitType: string, lbs: number, plants: number) => {
+  if (unitType === "Plants") return Math.max(0, Math.floor(plants));
+  if (unitType === "0.75oz Small Bag") return Math.max(0, Math.floor(lbs / SMALL_BAG_OZ_IN_LBS));
+  if (isContainerUnit(unitType)) return Math.max(0, Math.floor(lbs / SIX_OZ_IN_LBS));
+  return Math.max(0, Math.round(lbs * 100) / 100);
+};
+
+const getUnitLabel = (unitType: string) => {
+  if (unitType === "Plants") return "Plants";
+  if (unitType === "0.75oz Small Bag") return "Small Bags";
+  if (unitType === "6oz Bag") return "Bags";
+  if (unitType === "6oz Clamshell") return "Clamshells";
+  return "Lbs";
+};
+
+const isRepeatHarvestCrop = (crop: string) => REPEAT_HARVEST_CROPS.has(normalizeCropKey(crop));
+
+const CROP_PROFILES: Record<
+  string,
+  {
+    expectedLbsPerTower: number;
+  }
+> = {
+  arugula: { expectedLbsPerTower: 1.76 },
+  basil: { expectedLbsPerTower: 3.52 },
+  thai_basil: { expectedLbsPerTower: 3.52 },
+  butterhead: { expectedLbsPerTower: 3.52 },
+  brassica: { expectedLbsPerTower: 3.52 },
+  cilantro: { expectedLbsPerTower: 6.4 },
+  dill: { expectedLbsPerTower: 3.52 },
+  fennel: { expectedLbsPerTower: 3.52 },
+  five_star: { expectedLbsPerTower: 5.5 },
+  green_mizuna: { expectedLbsPerTower: 3.52 },
+  red_mizuna: { expectedLbsPerTower: 3.52 },
+  kale: { expectedLbsPerTower: 3.52 },
+  lettuce_mix: { expectedLbsPerTower: 3.52 },
+  mint: { expectedLbsPerTower: 3.52 },
+  muir: { expectedLbsPerTower: 5.6 },
+  oakleaf: { expectedLbsPerTower: 3.52 },
+  parsley: { expectedLbsPerTower: 3.52 },
+  romaine: { expectedLbsPerTower: 3.52 },
+  swiss_chard: { expectedLbsPerTower: 3.52 },
+  mizuna: { expectedLbsPerTower: 3.52 },
+  wildfire: { expectedLbsPerTower: 5.5 },
+  sunset_mix: { expectedLbsPerTower: 0 },
+  salad_mix: { expectedLbsPerTower: 0 },
+};
+const normalizeCropKey = (crop: string = "") =>
+  crop
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/\//g, " ")
+    .replace(/\s+/g, "_");
+
+const cropAliases: Record<string, string> = {
+  thaibasil: "thai_basil",
+  thai_basil: "thai_basil",
+  greenmizuna: "green_mizuna",
+  green_mizuna: "green_mizuna",
+  redmizuna: "red_mizuna",
+  red_mizuna: "red_mizuna",
+  lettucemix: "lettuce_mix",
+  lettuce_mix: "lettuce_mix",
+  fivestar: "five_star",
+  five_star: "five_star",
+  swisschard: "swiss_chard",
+  swiss_chard: "swiss_chard",
+  wild_fire: "wildfire",
+  wildfire: "wildfire",
+  oak_leaf: "oakleaf",
+};
+const validateTowerName = (tower: string): string => {
+  if (!tower) return "";
+  if (!/^[A-Za-z][A-Za-z0-9]*$/.test(tower))
+    return "Tower name must start with a letter (e.g. R1, A12). Did you use 0 (zero) instead of O (letter)?";
+  return "";
+};
+
+const getCropProfile = (crop: string) => {
+  const normalized = normalizeCropKey(crop);
+  const aliasKey = cropAliases[normalized] || normalized;
+
+  return (
+    CROP_PROFILES[aliasKey] || {
+      expectedLbsPerTower: 3.52,
+    }
+  );
+};
+const formatCropLabel = (crop: string) => {
+  const normalized = normalizeCropKey(crop);
+  const aliasKey = cropAliases[normalized] || normalized;
+
+  return aliasKey
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
+const getExpectedLbs = (crop: string) => {
+  const profile = getCropProfile(crop);
+  return profile ? profile.expectedLbsPerTower : "";
+};
+
+const toNumber = (value: unknown) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+};
+
+const normalizeStatus = (status: string) => (status || "").trim().toLowerCase();
+
+const formatDateInput = (value: string | Date | null | undefined) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+};
+
+const formatDateDisplay = (value: string | Date | null | undefined) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString();
+};
+
+const formatDateTimeDisplay = (value: string | Date | null | undefined) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString();
+};
+
+const addDays = (dateString: string, days: number) => {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
+const getStartOfWeek = (date: Date) => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+const getEndOfWeek = (date: Date) => {
+  const d = getStartOfWeek(date);
+  d.setDate(d.getDate() + 6);
+  d.setHours(23, 59, 59, 999);
+  return d;
+};
+
+const getTowerMaxPods = (towerType: string) => {
+  
+  return towerType === "High Density" ? 160 : 44;
+};
+
+const TOWER_ROW_ORDER = ["R", "O", "Y", "G", "B", "I", "V"];
+
+const parseTowerForSort = (tower: string) => {
+  const raw = (tower || "").trim().toUpperCase();
+
+  const match = raw.match(/^([A-Z]+)\s*0*(\d+)?/);
+
+  if (!match) {
+    return {
+      rowIndex: 999,
+      towerNumber: 9999,
+    };
+  }
+
+  const rowKey = match[1];
+  const towerNumber = match[2] ? Number(match[2]) : 9999;
+
+  return {
+    rowIndex: TOWER_ROW_ORDER.indexOf(rowKey),
+    towerNumber,
+  };
+};
+
+const sortInventoryByTowerLayout = (a: any, b: any) => {
+  const towerA = parseTowerForSort(getInventoryTower(a));
+  const towerB = parseTowerForSort(getInventoryTower(b));
+
+  if (towerA.rowIndex !== towerB.rowIndex) {
+    return towerA.rowIndex - towerB.rowIndex;
+  }
+
+  return towerA.towerNumber - towerB.towerNumber;
+};
+
+const calculateExpectedLbs = (crop: string, activePods: number, towerType = "Low Density") => {
+  const profile = getCropProfile(crop);
+  const fullTowerPods = towerType === "High Density" ? 160 : 44;
+  return Math.round(((activePods / fullTowerPods) * profile.expectedLbsPerTower) * 100) / 100;
+};
+
+const isDueTodayOrTomorrow = (dateString: string) => {
+  if (!dateString) return false;
+  const target = new Date(dateString);
+  if (Number.isNaN(target.getTime())) return false;
+
+  const today = new Date();
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const tomorrowOnly = new Date(todayOnly);
+  tomorrowOnly.setDate(tomorrowOnly.getDate() + 1);
+
+  const targetOnly = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+
+  return targetOnly.getTime() === todayOnly.getTime() || targetOnly.getTime() === tomorrowOnly.getTime();
+};
+
+const isDueToday = (dateString: string) => {
+  if (!dateString) return false;
+  const target = new Date(dateString);
+  if (Number.isNaN(target.getTime())) return false;
+
+  const today = new Date();
+  return (
+    target.getFullYear() === today.getFullYear() &&
+    target.getMonth() === today.getMonth() &&
+    target.getDate() === today.getDate()
+  );
+};
+
+const isOverdue = (dateString: string) => {
+  if (!dateString) return false;
+  const target = new Date(dateString);
+  if (Number.isNaN(target.getTime())) return false;
+
+  const today = new Date();
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const targetOnly = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+
+  return targetOnly.getTime() < todayOnly.getTime();
+};
+
+const generateRecurringDates = (startDate: string, endDate: string, frequency: string) => {
+  if (!startDate || !endDate) return [];
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
+
+  const dates: string[] = [];
+  const current = new Date(start);
+
+  while (current <= end) {
+    dates.push(formatDateInput(current));
+
+    if (frequency === "Weekly") {
+      current.setDate(current.getDate() + 7);
+    } else if (frequency === "Bi-Weekly") {
+      current.setDate(current.getDate() + 14);
+    } else if (frequency === "Monthly") {
+      current.setMonth(current.getMonth() + 1);
+    } else {
+      break;
+    }
+  }
+
+  return dates;
+};
+
+async function postToBackend(payload: Record<string, unknown>) {
+  const response = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return response.json();
+}
+
+const getStaffMode = (row: StaffActionRow) => row.mode || row.Mode || "";
+const getStaffTower = (row: StaffActionRow) => row.tower || row.Tower || "";
+const getStaffCrop = (row: StaffActionRow) => row.crop || row.Crop || "";
+const getStaffLbs = (row: StaffActionRow) => row.lbs ?? row.Lbs ?? row.LBS ?? "";
+const getStaffPodsChanged = (row: StaffActionRow) => row.podsChanged ?? row["Pods Changed"] ?? 0;
+const getStaffNote = (row: StaffActionRow) => row.note || row.Note || "";
+const getStaffTimestamp = (row: StaffActionRow) => row.timestamp || row.Timestamp || "";
+const getStaffDate = (row: StaffActionRow) => row.date || row.Date || "";
+
+const getOrderCustomer = (row: SalesOrderRow) => row.customer || row.Customer || "";
+const getOrderCrop = (row: SalesOrderRow) => row.crop || row.Crop || "";
+const getOrderUnitType = (row: SalesOrderRow) => row.unitType || row["Unit Type"] || "Lbs";
+const getOrderQuantityNeeded = (row: SalesOrderRow) => row.quantityNeeded ?? row["Quantity Needed"] ?? 0;
+const getOrderRequestedDeliveryDate = (row: SalesOrderRow) =>
+  row.requestedDeliveryDate || row["Requested Delivery Date"] || "";
+const getOrderPipelineTowers = (row: SalesOrderRow) => row.pipelineTowers ?? row["Pipeline Towers"] ?? 0;
+const getOrderNewTowersToPlant = (row: SalesOrderRow) => row.newTowersToPlant ?? row["New Towers To Plant"] ?? 0;
+const getOrderEstimatedReadyDate = (row: SalesOrderRow) =>
+  row.estimatedReadyDate || row["Estimated Ready Date"] || "";
+const getOrderStatus = (row: SalesOrderRow) => row.status || row.Status || "";
+const getOrderType = (row: SalesOrderRow) => row.orderType || row["Order Type"] || "One-Time";
+const getOrderFrequency = (row: SalesOrderRow) => row.frequency || row.Frequency || "";
+
+const getInventoryTower = (row: ProductionInventoryRow) => row.tower || row.Tower || "";
+const getInventoryTowerType = (row: ProductionInventoryRow) => row.towerType || row["Tower Type"] || "Low Density";
+const getInventoryMaxPods = (row: ProductionInventoryRow) =>
+  row.maxPods ?? row["Max Pods"] ?? getTowerMaxPods(getInventoryTowerType(row));
+const getInventoryActivePods = (row: ProductionInventoryRow) =>
+  row.activePods ?? row["Active Pods"] ?? getInventoryMaxPods(row);
+const getInventoryCrop = (row: ProductionInventoryRow) => row.crop || row.Crop || "";
+const getInventoryStage = (row: ProductionInventoryRow) => row.stage || row.Stage || "";
+const getInventorySeededDate = (row: ProductionInventoryRow) => row.seededDate || row["Seeded Date"] || "";
+const getInventoryTransplantDate = (row: ProductionInventoryRow) => row.transplantDate || row["Transplant Date"] || "";
+const getInventoryEstimatedReadyDate = (row: ProductionInventoryRow) =>
+  row.estimatedReadyDate || row["Estimated Ready Date"] || "";
+
+const getInventoryEffectiveReadyDate = (row: ProductionInventoryRow) => {
+  const explicitReadyDate = formatDateInput(getInventoryEstimatedReadyDate(row));
+  if (explicitReadyDate) return explicitReadyDate;
+
+  const seededDate = formatDateInput(getInventorySeededDate(row));
+  if (seededDate) return addDays(seededDate, 42);
+
+  return "";
+};
+
+const getInventoryExpectedLbs = (row: ProductionInventoryRow) => {
+  const stored = row.expectedLbs ?? row["Expected Lbs"];
+  if (stored !== "" && stored !== null && stored !== undefined) {
+    return stored;
+  }
+
+  return calculateExpectedLbs(
+    getInventoryCrop(row),
+    toNumber(getInventoryActivePods(row)),
+    getInventoryTowerType(row)
+  );
+};
+
+const getInventoryRemainingExpectedLbs = (row: ProductionInventoryRow) => {
+  const stored = row.remainingExpectedLbs ?? row["Remaining Expected Lbs"];
+  if (stored !== "" && stored !== null && stored !== undefined) {
+    return stored;
+  }
+
+  const expected = row.expectedLbs ?? row["Expected Lbs"];
+  if (expected !== "" && expected !== null && expected !== undefined) {
+    return expected;
+  }
+
+  return calculateExpectedLbs(
+    getInventoryCrop(row),
+    toNumber(getInventoryActivePods(row)),
+    getInventoryTowerType(row)
+  );
+};
+
+const getInventoryStatus = (row: ProductionInventoryRow) => row.status || row.Status || "";
+const getInventoryNotes = (row: ProductionInventoryRow) => row.notes || row.Notes || "";
+const getInventoryTrimCount = (row: ProductionInventoryRow): number | string =>
+  (row as any).trimCount ?? (row as any)["Trim Count"] ?? 0;
+
+const getInventoryHarvestType = (row: ProductionInventoryRow): string =>
+  row.harvestType || row["Harvest Type"] || "";
+
+const getEffectiveHarvestType = (row: ProductionInventoryRow): "Full Harvest" | "Trim Harvest" => {
+  const cropName = getInventoryCrop(row);
+  if (!isRepeatHarvestCrop(cropName)) return "Full Harvest";
+  const stored = getInventoryHarvestType(row);
+  if (stored === "Full Harvest") return "Full Harvest";
+  return "Trim Harvest";
+};
 
 export default function App() {
   const [activePage, setActivePage] = useState<PageKey>("dashboard");
   const [loadingData, setLoadingData] = useState(false);
-
-  // Loading states for async handlers
-  const [markPlantedLoading, setMarkPlantedLoading] = useState<string | null>(null);
-  const [transplantLoading, setTransplantLoading] = useState(false);
-  const [harvestLoading, setHarvestLoading] = useState(false);
-  const [packLoadingRow, setPackLoadingRow] = useState<number | null>(null);
 
   const [staffRows, setStaffRows] = useState<StaffActionRow[]>([]);
   const [salesOrders, setSalesOrders] = useState<SalesOrderRow[]>([]);
@@ -163,9 +568,10 @@ export default function App() {
 
   // Sales Planner / Orders
   const [salesCustomer, setSalesCustomer] = useState("");
-  const [draftOrderLines, setDraftOrderLines] = useState<DraftOrderLine[]>([
-    { id: makeId(), crop: "", unitType: "Lbs", quantityNeeded: "" },
-  ]);
+  const [salesCrop, setSalesCrop] = useState("");
+  const [salesUnitType, setSalesUnitType] = useState<OrderUnitType>("Lbs");
+  const [salesQuantityNeeded, setSalesQuantityNeeded] = useState("");
+  const [draftOrderLines, setDraftOrderLines] = useState<DraftOrderLine[]>([]);
   const [editingSalesOrderRowNumber, setEditingSalesOrderRowNumber] = useState<number | null>(null);
   const [salesDeliveryDate, setSalesDeliveryDate] = useState("");
   const [salesNotes, setSalesNotes] = useState("");
@@ -182,8 +588,23 @@ export default function App() {
   const [savedOrderDueFilter, setSavedOrderDueFilter] = useState<"All" | "Current Week">("All");
   const [expandedSavedOrderGroups, setExpandedSavedOrderGroups] = useState<Record<string, boolean>>({});
 
-  // Production Inventory form (useReducer)
-  const [inventoryForm, dispatchInventory] = useInventoryForm();
+  // Production Inventory form
+  const [inventoryTower, setInventoryTower] = useState("");
+  const [inventoryTowerType, setInventoryTowerType] = useState("Low Density");
+  const [inventoryMaxPods, setInventoryMaxPods] = useState(String(getTowerMaxPods("Low Density")));
+  const [inventoryActivePods, setInventoryActivePods] = useState(String(getTowerMaxPods("Low Density")));
+  const [inventoryCrop, setInventoryCrop] = useState("");
+  const [inventoryStage, setInventoryStage] = useState("Growing");
+  const [inventorySeededDate, setInventorySeededDate] = useState("");
+  const [inventoryTransplantDate, setInventoryTransplantDate] = useState("");
+  const [inventoryEstimatedReadyDate, setInventoryEstimatedReadyDate] = useState("");
+  const [inventoryHarvestType, setInventoryHarvestType] = useState("");
+  const [inventoryExpectedLbs, setInventoryExpectedLbs] = useState("");
+  const [inventoryRemainingExpectedLbs, setInventoryRemainingExpectedLbs] = useState("");
+  const [inventoryStatus, setInventoryStatus] = useState("Active");
+  const [inventoryNotes, setInventoryNotes] = useState("");
+  const [inventoryMessage, setInventoryMessage] = useState("");
+  const [inventorySaving, setInventorySaving] = useState(false);
 
   // Inventory adjustment
   const [adjustInventoryRow, setAdjustInventoryRow] = useState("");
@@ -194,14 +615,34 @@ export default function App() {
   const [adjustScrapType, setAdjustScrapType] = useState("");
   const [adjustMessage, setAdjustMessage] = useState("");
 
-  // Edit inventory (useReducer)
-  const [editInventoryForm, dispatchEditInventory] = useEditInventoryForm();
+  // Edit inventory
+  const [editingInventoryRowNumber, setEditingInventoryRowNumber] = useState("");
+  const [editInventoryTower, setEditInventoryTower] = useState("");
+  const [editInventoryTowerType, setEditInventoryTowerType] = useState("Low Density");
+  const [editInventoryMaxPods, setEditInventoryMaxPods] = useState("");
+  const [editInventoryActivePods, setEditInventoryActivePods] = useState("");
+  const [editInventoryCrop, setEditInventoryCrop] = useState("");
+  const [editInventoryStage, setEditInventoryStage] = useState("Growing");
+  const [editInventorySeededDate, setEditInventorySeededDate] = useState("");
+  const [editInventoryTransplantDate, setEditInventoryTransplantDate] = useState("");
+  const [editInventoryEstimatedReadyDate, setEditInventoryEstimatedReadyDate] = useState("");
+  const [editInventoryHarvestType, setEditInventoryHarvestType] = useState("");
+  const [editInventoryExpectedLbs, setEditInventoryExpectedLbs] = useState("");
+  const [editInventoryRemainingExpectedLbs, setEditInventoryRemainingExpectedLbs] = useState("");
+  const [editInventoryStatus, setEditInventoryStatus] = useState("Active");
+  const [editInventoryNotes, setEditInventoryNotes] = useState("");
+  const [editInventoryMessage, setEditInventoryMessage] = useState("");
+  const [editInventorySaving, setEditInventorySaving] = useState(false);
 
   // Staff Daily action helpers
   const [dailyMessage, setDailyMessage] = useState("");
-  const [plantingTowerType, setPlantingTowerType] = useState<Record<string, string>>({});
-  // Harvest form (useReducer)
-  const [harvestForm, dispatchHarvest] = useHarvestForm();
+  const [plantingTrayType, setPlantingTrayType] = useState<Record<string, "Full Tray" | "Half Tray">>({});
+  const [activeHarvestRowNumber, setActiveHarvestRowNumber] = useState("");
+  const [harvestActionType, setHarvestActionType] = useState<"Full Harvest" | "Trim Harvest">("Full Harvest");
+  const [harvestPodsValue, setHarvestPodsValue] = useState("");
+  const [harvestOutputUnit, setHarvestOutputUnit] = useState<OrderUnitType>("Lbs");
+  const [harvestOutputQty, setHarvestOutputQty] = useState("");
+  const [harvestNote, setHarvestNote] = useState("");
   const [staffLookupCrop, setStaffLookupCrop] = useState("");
   const [quickEntryUnitType, setQuickEntryUnitType] = useState<OrderUnitType>("Lbs");
   const [seedScheduleFilter, setSeedScheduleFilter] = useState<"Today" | "This Week" | "This Month">("Today");
@@ -220,6 +661,37 @@ export default function App() {
     loadAllData();
   }, []);
 
+  useEffect(() => {
+    const max = getTowerMaxPods(inventoryTowerType);
+    setInventoryMaxPods(String(max));
+    if (!inventoryActivePods || Number(inventoryActivePods) > max) {
+      setInventoryActivePods(String(max));
+    }
+  }, [inventoryTowerType]);
+
+  useEffect(() => {
+    if (inventoryCrop) {
+     const expected = calculateExpectedLbs(
+  inventoryCrop,
+  toNumber(inventoryActivePods),
+  inventoryTowerType
+);
+      setInventoryExpectedLbs(String(expected));
+      setInventoryRemainingExpectedLbs(String(expected));
+    }
+ }, [inventoryCrop, inventoryActivePods, inventoryTowerType]);
+
+  useEffect(() => {
+    if (inventorySeededDate && !inventoryEstimatedReadyDate) {
+      setInventoryEstimatedReadyDate(addDays(inventorySeededDate, 42));
+    }
+  }, [inventorySeededDate, inventoryEstimatedReadyDate]);
+
+  useEffect(() => {
+    if (editInventorySeededDate && !editInventoryEstimatedReadyDate) {
+      setEditInventoryEstimatedReadyDate(addDays(editInventorySeededDate, 42));
+    }
+  }, [editInventorySeededDate, editInventoryEstimatedReadyDate]);
 
   useEffect(() => {
     const max = getTowerMaxPods(transplantTowerType);
@@ -316,7 +788,7 @@ export default function App() {
       const itemStatus = normalizeStatus(getInventoryStatus(item));
       const itemStage = normalizeStatus(getInventoryStage(item));
       const readyDate = getInventoryEffectiveReadyDate(item);
-      const readyNow = !!readyDate && readyDate <= today && ["transplanted", "growing", "ready", "trimmed"].includes(itemStage);
+      const readyNow = !!readyDate && readyDate <= today && ["transplanted", "growing", "ready"].includes(itemStage);
 
       current.towers += 1;
       current.availableLbs += remainingLbs;
@@ -327,17 +799,40 @@ export default function App() {
         itemStage === "growing" ||
         itemStage === "transplanted" ||
         itemStage === "ready" ||
-        itemStage === "seeded" ||
-        itemStage === "trimmed"
+        itemStage === "seeded"
       ) {
         current.pipelineTowers += 1;
       }
 
+      const harvestType = getEffectiveHarvestType(item);
+      const isTrimHarvest = harvestType === "Trim Harvest";
+      const trimCount = toNumber(getInventoryTrimCount(item));
+      const remainingTrimCycles = Math.max(0, MAX_TRIMS - trimCount - 1);
+      const lbsPerCycle = toNumber(getInventoryExpectedLbs(item)) || remainingLbs;
+
       if (readyNow) {
         current.readyNowLbs += remainingLbs;
         current.readyNowPlants += activePods;
+        if (isTrimHarvest && remainingTrimCycles > 0) {
+          for (let i = 1; i <= remainingTrimCycles; i++) {
+            current.futureEntries.push({
+              readyDate: addDays(today, i * TRIM_REGROWTH_DAYS),
+              lbs: lbsPerCycle,
+              plants: activePods,
+            });
+          }
+        }
       } else if (readyDate) {
         current.futureEntries.push({ readyDate, lbs: remainingLbs, plants: activePods });
+        if (isTrimHarvest && remainingTrimCycles > 0) {
+          for (let i = 1; i <= remainingTrimCycles; i++) {
+            current.futureEntries.push({
+              readyDate: addDays(readyDate, i * TRIM_REGROWTH_DAYS),
+              lbs: lbsPerCycle,
+              plants: activePods,
+            });
+          }
+        }
       }
 
       if (readyDate) {
@@ -356,141 +851,73 @@ export default function App() {
     return map;
   }, [activeInventory]);
 
+  const currentLineQtyNeeded = toNumber(salesQuantityNeeded);
+  const currentLineQtyInLbs = quantityToLbs(salesUnitType, currentLineQtyNeeded);
+
   const salesPlanner: SalesPlannerResult = useMemo(() => {
-    const today = formatDateInput(new Date());
-    const validLines = draftOrderLines.filter(l => l.crop.trim() && toNumber(l.quantityNeeded) > 0);
+    const qtyNeeded = toNumber(salesQuantityNeeded);
+    const cropName = (salesCrop || "").trim();
+    const cropInventory = inventoryByCrop.get(cropName);
+    const targetDate = salesOrderType === "Contract" ? salesContractStartDate : salesDeliveryDate;
 
-    const empty: SalesPlannerResult = {
-      availableQty: 0, shortageQty: 0, towersNeeded: 0, pipelineTowers: 0,
-      newTowersToPlant: 0, estimatedReadyDate: "", deliveryFeasible: false,
-      unitLabel: "Lbs", qtyNeededInLbs: 0,
-    };
+    const committedSameCropLbs = salesOrders.reduce((sum, order) => {
+      if (editingSalesOrderRowNumber && order.rowNumber === editingSalesOrderRowNumber) return sum;
+      if ((getOrderCrop(order) || "").trim() !== cropName) return sum;
+      const dueDate = getOrderRequestedDeliveryDate(order);
+      const orderStatus = normalizeStatus(getOrderStatus(order));
+      if (["completed", "cancelled", "packed"].includes(orderStatus)) return sum;
+      if (!dueDate || !targetDate || dueDate > targetDate) return sum;
+      return sum + quantityToLbs(getOrderUnitType(order), toNumber(getOrderQuantityNeeded(order)));
+    }, 0);
 
-    if (!validLines.length) return empty;
+    const readyNowLbs = Math.max(0, (cropInventory?.readyNowLbs || 0) - committedSameCropLbs);
+    const readyNowPlants = Math.max(0, (cropInventory?.readyNowPlants || 0) - committedSameCropLbs * 16 / 6);
+    const availableQty = availableLbsToUnitQty(salesUnitType, readyNowLbs, readyNowPlants);
+    const shortageQty = Math.max(0, qtyNeeded - availableQty);
 
-    const newOrderDates: string[] =
-      salesOrderType === "Contract"
-        ? generateRecurringDates(salesContractStartDate, salesContractEndDate, salesFrequency)
-        : salesDeliveryDate ? [salesDeliveryDate] : [];
+    const qtyNeededInLbs = quantityToLbs(salesUnitType, qtyNeeded);
+    const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
+    const towersNeeded = qtyNeededInLbs > 0 ? Math.ceil(qtyNeededInLbs / avgQtyPerTower) : 0;
+    const pipelineTowers = cropInventory ? cropInventory.pipelineTowers : 0;
+    const newTowersToPlant = Math.max(0, towersNeeded - pipelineTowers);
 
-    if (!newOrderDates.length) return empty;
-
-    let totalAvailableLbs = 0;
-    let totalShortageLbs = 0;
-    let totalTowersNeeded = 0;
-    let totalPipelineTowers = 0;
-    let totalNewTowersToPlant = 0;
-    let totalQtyInLbs = 0;
-    let allFeasible = true;
-    let firstProblemDate = "";
-    let latestEstimatedReadyDate = "";
-
-    for (const line of validLines) {
-      const cropName = line.crop.trim();
-      const qtyNeeded = toNumber(line.quantityNeeded);
-      const qtyNeededInLbs = quantityToLbs(line.unitType, qtyNeeded);
-      const avgLbsPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
-      const cropInventory = inventoryByCrop.get(cropName);
-      const pipelineTowers = cropInventory?.pipelineTowers || 0;
-      totalQtyInLbs += qtyNeededInLbs;
-
-      const pool = buildCropPools(inventoryByCrop).get(cropName) || { readyLbs: 0, readyPlants: 0, futureEntries: [] };
-
-      const existingDeliveries: Array<{ dueDate: string; unitType: string; qty: number }> = [];
-      for (const order of salesOrders) {
-        if (editingSalesOrderRowNumber && order.rowNumber === editingSalesOrderRowNumber) continue;
-        if ((getOrderCrop(order) || "").trim() !== cropName) continue;
-        const status = normalizeStatus(getOrderStatus(order));
-        if (["completed", "cancelled", "packed"].includes(status)) continue;
-        const dueDate = getOrderRequestedDeliveryDate(order);
-        if (!dueDate) continue;
-        const unitType = getOrderUnitType(order);
-        const qty = toNumber(getOrderQuantityNeeded(order));
-        const orderType = getOrderType(order);
-        const frequency = getOrderFrequency(order);
-        const contractEnd = getOrderContractEndDate(order);
-        if (orderType === "Contract" && frequency && contractEnd) {
-          for (const date of generateRecurringDates(dueDate, contractEnd, frequency)) {
-            existingDeliveries.push({ dueDate: date, unitType, qty });
-          }
-        } else {
-          existingDeliveries.push({ dueDate, unitType, qty });
-        }
-      }
-
-      type Delivery = { dueDate: string; unitType: string; qty: number; isNew: boolean };
-      const allDeliveries: Delivery[] = [
-        ...existingDeliveries.map(d => ({ ...d, isNew: false })),
-        ...newOrderDates.map(date => ({ dueDate: date, unitType: line.unitType as string, qty: qtyNeeded, isNew: true })),
-      ].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-
-      let firstAvailableLbs = 0;
-      let worstShortageQty = 0;
-      let worstShortageLbs = 0;
-      let lineProblemDate = "";
-      let newOrderSeen = false;
-
-      for (const delivery of allDeliveries) {
-        const result = allocateOrderAgainstPool(pool, cropName, delivery.dueDate, delivery.unitType, delivery.qty, avgLbsPerTower, true);
-        if (delivery.isNew) {
-          if (!newOrderSeen) { firstAvailableLbs = result.availableLbsByDue; newOrderSeen = true; }
-          if (result.shortageQty > worstShortageQty) {
-            worstShortageQty = result.shortageQty;
-            worstShortageLbs = result.shortageLbs;
-          }
-          if (result.shortageQty > 0 && !lineProblemDate) lineProblemDate = delivery.dueDate;
-        }
-      }
-
-      totalAvailableLbs += firstAvailableLbs;
-      totalShortageLbs += worstShortageLbs;
-      const towersNeeded = qtyNeededInLbs > 0 ? Math.ceil(qtyNeededInLbs / avgLbsPerTower) : 0;
-      const newTowersToPlant = worstShortageLbs > 0 ? Math.ceil(worstShortageLbs / avgLbsPerTower) : 0;
-      totalTowersNeeded += towersNeeded;
-      totalPipelineTowers += pipelineTowers;
-      totalNewTowersToPlant += newTowersToPlant;
-
-      if (worstShortageQty > 0) {
-        allFeasible = false;
-        let lineEstimatedDate = "";
-        if (salesOrderType === "Contract") {
-          lineEstimatedDate = lineProblemDate;
-        } else {
-          let running = pool.readyLbs;
-          for (const entry of pool.futureEntries) {
-            running += entry.lbs;
-            if (running >= qtyNeededInLbs) { lineEstimatedDate = entry.readyDate; break; }
-          }
-          if (!lineEstimatedDate) lineEstimatedDate = addDays(today, 42);
-        }
-        if (!firstProblemDate && lineProblemDate) firstProblemDate = lineProblemDate;
-        if (!latestEstimatedReadyDate || (lineEstimatedDate && new Date(lineEstimatedDate) > new Date(latestEstimatedReadyDate))) {
-          latestEstimatedReadyDate = lineEstimatedDate;
+    let estimatedReadyDate = "";
+    if (qtyNeeded > 0 && shortageQty > 0 && cropInventory) {
+      let runningLbs = readyNowLbs;
+      for (const entry of cropInventory.futureEntries) {
+        runningLbs += entry.lbs;
+        if (runningLbs >= qtyNeededInLbs) {
+          estimatedReadyDate = entry.readyDate;
+          break;
         }
       }
     }
 
-    const estimatedReadyDate = allFeasible ? "" : (salesOrderType === "Contract" ? firstProblemDate : latestEstimatedReadyDate);
+    if (!estimatedReadyDate && shortageQty > 0) {
+      estimatedReadyDate = addDays(formatDateInput(new Date()), 42);
+    }
+
+    const deliveryFeasible = qtyNeeded > 0 && (shortageQty === 0 || (!!targetDate && !!estimatedReadyDate && new Date(estimatedReadyDate).getTime() <= new Date(targetDate).getTime()));
 
     return {
-      availableQty: totalAvailableLbs,
-      shortageQty: totalShortageLbs,
-      towersNeeded: totalTowersNeeded,
-      pipelineTowers: totalPipelineTowers,
-      newTowersToPlant: totalNewTowersToPlant,
-      estimatedReadyDate,
-      deliveryFeasible: validLines.length > 0 && allFeasible,
-      unitLabel: "Lbs",
-      qtyNeededInLbs: totalQtyInLbs,
+      availableQty,
+      shortageQty,
+      towersNeeded,
+      pipelineTowers,
+      newTowersToPlant,
+      estimatedReadyDate: shortageQty === 0 ? "" : estimatedReadyDate,
+      deliveryFeasible,
+      unitLabel: getUnitLabel(salesUnitType),
+      qtyNeededInLbs,
     };
   }, [
-    draftOrderLines,
+    salesCrop,
+    salesQuantityNeeded,
     salesDeliveryDate,
-    salesContractStartDate,
-    salesContractEndDate,
-    salesFrequency,
-    salesOrderType,
     inventoryByCrop,
+    salesUnitType,
+    salesOrderType,
+    salesContractStartDate,
     salesOrders,
     editingSalesOrderRowNumber,
   ]);
@@ -528,21 +955,17 @@ export default function App() {
 
 
   const groupedSavedOrders = useMemo(() => {
-    const STATUS_RANK: Record<string, number> = {
-      "planned": 0, "in progress": 1, "harvested": 2, "packed": 3, "completed": 4, "cancelled": 5,
-    };
-    const today = formatDateInput(new Date());
-    const groups = new Map<string, { key: string; customer: string; dueDate: string; status: string; cropSummary: string; isOverdue: boolean; items: SalesOrderRow[]; totalNewTowers: number }>();
+    const groups = new Map<string, { key: string; customer: string; dueDate: string; status: string; items: SalesOrderRow[]; totalNewTowers: number }>();
 
     filteredSavedOrders.forEach((order) => {
       const customer = getOrderCustomer(order) || "Unknown Customer";
       const dueDate = getOrderRequestedDeliveryDate(order) || "";
       const key = `${customer}__${dueDate}`;
       const current = groups.get(key) || {
-        key, customer, dueDate,
+        key,
+        customer,
+        dueDate,
         status: getOrderStatus(order) || "Planned",
-        cropSummary: "",
-        isOverdue: false,
         items: [],
         totalNewTowers: 0,
       };
@@ -550,21 +973,6 @@ export default function App() {
       current.totalNewTowers += toNumber(getOrderNewTowersToPlant(order));
       groups.set(key, current);
     });
-
-    for (const group of groups.values()) {
-      const statuses = group.items.map(i => getOrderStatus(i) || "Planned");
-      group.status = statuses.reduce((worst, curr) => {
-        return (STATUS_RANK[normalizeStatus(curr)] ?? 0) < (STATUS_RANK[normalizeStatus(worst)] ?? 0) ? curr : worst;
-      }, statuses[0]);
-
-      const uniqueCrops = [...new Set(group.items.map(i => getOrderCrop(i)).filter(Boolean))];
-      group.cropSummary = uniqueCrops.length <= 4
-        ? uniqueCrops.join(", ")
-        : `${uniqueCrops.slice(0, 3).join(", ")} +${uniqueCrops.length - 3} more`;
-
-      const notDone = !["completed", "cancelled", "packed", "harvested"].includes(normalizeStatus(group.status));
-      group.isOverdue = !!group.dueDate && group.dueDate < today && notDone;
-    }
 
     return Array.from(groups.values()).sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
   }, [filteredSavedOrders]);
@@ -603,7 +1011,22 @@ const openOrders = useMemo(() => {
 }, [salesOrders]);
 
 const plantTodayTasks = useMemo(() => {
-  const cropPools = buildCropPools(inventoryByCrop);
+  const cropPools = new Map<
+    string,
+    {
+      readyLbs: number;
+      readyPlants: number;
+      futureEntries: Array<{ readyDate: string; lbs: number; plants: number }>;
+    }
+  >();
+
+  for (const [cropName, cropInventory] of inventoryByCrop.entries()) {
+    cropPools.set(cropName.toLowerCase(), {
+      readyLbs: cropInventory.readyNowLbs,
+      readyPlants: cropInventory.readyNowPlants,
+      futureEntries: cropInventory.futureEntries.map((entry) => ({ ...entry })),
+    });
+  }
 
   const grouped = new Map<
     string,
@@ -624,56 +1047,97 @@ const plantTodayTasks = useMemo(() => {
 
   const today = formatDateInput(new Date());
 
+  // Expand orders: salad mix orders become per-component crop demands
+  type OrderDemand = { cropKey: string; cropName: string; dueDate: string; qtyInLbs: number; customer: string };
+  const demands: OrderDemand[] = [];
   for (const order of openOrders) {
-    const cropName = getOrderCrop(order) || "Unknown Crop";
+    const rawCrop = (getOrderCrop(order) || "").trim();
+    const normalized = normalizeCropKey(rawCrop);
+    const cropKey = cropAliases[normalized] || normalized;
     const dueDate = getOrderRequestedDeliveryDate(order);
     if (!dueDate) continue;
-
-    // Skip past-due orders — they have either been delivered (mark them complete)
-    // or are genuinely overdue (shown in the Overdue section). Either way they
-    // should not drain the inventory pool used for future seeding planning.
-    if (dueDate < today) continue;
-
     const unitType = getOrderUnitType(order);
     const qtyNeeded = toNumber(getOrderQuantityNeeded(order));
-    const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
+    const totalLbs = quantityToLbs(unitType, qtyNeeded);
+    const recipe = SALAD_MIX_RECIPES[cropKey];
+    if (recipe && totalLbs > 0) {
+      const totalRecipeOz = recipe.reduce((s, c) => s + c.oz, 0);
+      for (const { crop: compCrop, oz } of recipe) {
+        demands.push({
+          cropKey: compCrop,
+          cropName: formatCropLabel(compCrop),
+          dueDate,
+          qtyInLbs: Math.round(totalLbs * (oz / totalRecipeOz) * 1000) / 1000,
+          customer: `${getOrderCustomer(order)} (${formatCropLabel(cropKey)})`,
+        });
+      }
+    } else if (!recipe) {
+      demands.push({ cropKey, cropName: rawCrop, dueDate, qtyInLbs: totalLbs, customer: getOrderCustomer(order) });
+    }
+  }
+  demands.sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
+
+  for (const demand of demands) {
+    const { cropKey, cropName, dueDate, qtyInLbs, customer } = demand;
     const seedByDate = addDays(dueDate, -42);
 
-    const pool = cropPools.get(cropName) || {
-      readyLbs: 0,
-      readyPlants: 0,
-      futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
-    };
+    const pool =
+      cropPools.get(cropKey) || {
+        readyLbs: 0,
+        readyPlants: 0,
+        futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
+      };
 
-    const result = allocateOrderAgainstPool(pool, cropName, dueDate, unitType, qtyNeeded, avgQtyPerTower, true);
-    cropPools.set(cropName, pool);
+    let availableLbsByDue = pool.readyLbs;
+    let availablePlantsByDue = pool.readyPlants;
+    const remainingFutureEntries: Array<{ readyDate: string; lbs: number; plants: number }> = [];
 
-    const newTowersNeeded = result.newTowersNeeded;
+    for (const entry of pool.futureEntries) {
+      if (entry.readyDate && entry.readyDate <= dueDate) {
+        availableLbsByDue += entry.lbs;
+        availablePlantsByDue += entry.plants;
+      } else {
+        remainingFutureEntries.push(entry);
+      }
+    }
+
+    const shortageLbs = Math.max(0, qtyInLbs - availableLbsByDue);
+    const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropKey, HALF_TRAY_SEEDS));
+    const newTowersNeeded = shortageLbs > 0 ? Math.ceil(shortageLbs / avgQtyPerTower) : 0;
+
+    const consumedLbs = Math.min(qtyInLbs, availableLbsByDue);
+    const consumedPlants = Math.min(Math.round((consumedLbs * 16) / 6), availablePlantsByDue);
+
+    pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
+    pool.readyPlants = Math.max(0, availablePlantsByDue - consumedPlants);
+    pool.futureEntries = remainingFutureEntries;
+    cropPools.set(cropKey, pool);
 
     if (newTowersNeeded <= 0 || !seedByDate) continue;
 
     const seededCount = activeInventory.filter(
-      (item) => getInventoryCrop(item) === cropName && normalizeStatus(getInventoryStage(item)) === "seeded"
+      (item) => (getInventoryCrop(item) || "").trim().toLowerCase() === cropKey && normalizeStatus(getInventoryStage(item)) === "seeded"
     ).length;
 
     const pipelineCount = activeInventory.filter(
       (item) =>
-        getInventoryCrop(item) === cropName &&
-        ["seeded", "transplanted", "growing", "ready", "trimmed"].includes(normalizeStatus(getInventoryStage(item))) &&
+        (getInventoryCrop(item) || "").trim().toLowerCase() === cropKey &&
+        ["seeded", "transplanted", "growing", "ready"].includes(normalizeStatus(getInventoryStage(item))) &&
         !["harvested", "lost", "scrapped", "closed"].includes(normalizeStatus(getInventoryStatus(item)))
     ).length;
 
-    const cropInventory = inventoryByCrop.get(cropName);
-    const key = `${seedByDate}__${cropName}`;
+    const cropInventory = inventoryByCrop.get(cropName) || inventoryByCrop.get(cropKey);
     const urgency: "Overdue" | "Today" | "Upcoming" =
       seedByDate < today ? "Overdue" : seedByDate === today ? "Today" : "Upcoming";
+    const effectiveSeedByDate = seedByDate < today ? today : seedByDate;
+    const key = `${effectiveSeedByDate}__${cropKey}`;
 
     const current = grouped.get(key) || {
       crop: cropName,
       totalTowers: 0,
       orders: [],
       orderCount: 0,
-      seedByDate,
+      seedByDate: effectiveSeedByDate,
       earliestDueDate: dueDate,
       currentAvailableLbs: cropInventory ? cropInventory.availableLbs : 0,
       currentAvailablePlants: cropInventory ? cropInventory.availablePlants : 0,
@@ -684,7 +1148,7 @@ const plantTodayTasks = useMemo(() => {
 
     current.totalTowers += newTowersNeeded;
     current.orderCount += 1;
-    current.orders.push(`${getOrderCustomer(order)} (${newTowersNeeded} towers)`);
+    current.orders.push(`${customer} (${newTowersNeeded} towers)`);
     if (!current.earliestDueDate || new Date(dueDate) < new Date(current.earliestDueDate)) {
       current.earliestDueDate = dueDate;
     }
@@ -709,7 +1173,8 @@ const plantTodayTasks = useMemo(() => {
 
     const towerLabel = getInventoryTower(item) || `row ${item.rowNumber}`;
     const replacementLabel = `Replace tower ${towerLabel} (trim ${trimCount}/${MAX_TRIMS})`;
-    const key = `${seedByDate}__${cropName}`;
+    const effectiveReplaceSeedByDate = seedByDate < today ? today : seedByDate;
+    const key = `${effectiveReplaceSeedByDate}__${cropName}`;
 
     const existing = grouped.get(key);
     if (existing) {
@@ -731,7 +1196,7 @@ const plantTodayTasks = useMemo(() => {
         totalTowers: 1,
         orders: [replacementLabel],
         orderCount: 0,
-        seedByDate,
+        seedByDate: effectiveReplaceSeedByDate,
         earliestDueDate: exhaustDate,
         currentAvailableLbs: cropInventory ? cropInventory.availableLbs : 0,
         currentAvailablePlants: cropInventory ? cropInventory.availablePlants : 0,
@@ -741,6 +1206,7 @@ const plantTodayTasks = useMemo(() => {
       });
     }
   }
+
 
   return Array.from(grouped.values()).sort((a, b) => {
     const dateCompare =
@@ -785,7 +1251,7 @@ const readyToHarvestInventory = useMemo(() => {
       const readyDate = getInventoryEffectiveReadyDate(item);
 
       if (["harvested", "lost", "scrapped", "closed"].includes(status)) return false;
-      if (!["transplanted", "growing", "ready", "trimmed"].includes(stage)) return false;
+      if (!["transplanted", "growing", "ready"].includes(stage)) return false;
       if (!readyDate) return false;
 
       return readyDate <= today;
@@ -959,7 +1425,22 @@ const overdueOrders = useMemo(() => {
           new Date(getOrderRequestedDeliveryDate(b) || "2100-01-01").getTime()
       );
 
-    const cropPools = buildCropPools(inventoryByCrop);
+    const cropPools = new Map<
+      string,
+      {
+        readyLbs: number;
+        readyPlants: number;
+        futureEntries: Array<{ readyDate: string; lbs: number; plants: number }>;
+      }
+    >();
+
+    for (const [cropName, cropInventory] of inventoryByCrop.entries()) {
+      cropPools.set(cropName, {
+        readyLbs: cropInventory.readyNowLbs,
+        readyPlants: cropInventory.readyNowPlants,
+        futureEntries: cropInventory.futureEntries.map((entry) => ({ ...entry })),
+      });
+    }
 
     const alerts = openOrders
       .map((row) => {
@@ -967,15 +1448,43 @@ const overdueOrders = useMemo(() => {
         const dueDate = getOrderRequestedDeliveryDate(row);
         const unitType = getOrderUnitType(row);
         const qtyNeeded = toNumber(getOrderQuantityNeeded(row));
+        const qtyNeededInLbs = quantityToLbs(unitType, qtyNeeded);
         const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
 
-        const pool = cropPools.get(cropName) || {
-          readyLbs: 0,
-          readyPlants: 0,
-          futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
-        };
+        const pool =
+          cropPools.get(cropName) || {
+            readyLbs: 0,
+            readyPlants: 0,
+            futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
+          };
 
-        const result = allocateOrderAgainstPool(pool, cropName, dueDate, unitType, qtyNeeded, avgQtyPerTower, true);
+        let availableLbsByDue = pool.readyLbs;
+        let availablePlantsByDue = pool.readyPlants;
+        const remainingFutureEntries: Array<{ readyDate: string; lbs: number; plants: number }> = [];
+
+        for (const entry of pool.futureEntries) {
+          if (dueDate && entry.readyDate && entry.readyDate <= dueDate) {
+            availableLbsByDue += entry.lbs;
+            availablePlantsByDue += entry.plants;
+          } else {
+            remainingFutureEntries.push(entry);
+          }
+        }
+
+        const availableQtyByDue = availableLbsToUnitQty(unitType, availableLbsByDue, availablePlantsByDue);
+        const shortageQty = Math.max(0, qtyNeeded - availableQtyByDue);
+        const shortageLbs = Math.max(0, qtyNeededInLbs - availableLbsByDue);
+        const newTowers = shortageLbs > 0 ? Math.ceil(shortageLbs / avgQtyPerTower) : 0;
+
+        const consumedLbs = Math.min(qtyNeededInLbs, availableLbsByDue);
+        const consumedPlants = Math.min(
+          unitType === "Plants" ? qtyNeeded : Math.round((consumedLbs * 16) / 6),
+          availablePlantsByDue
+        );
+
+        pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
+        pool.readyPlants = Math.max(0, availablePlantsByDue - consumedPlants);
+        pool.futureEntries = remainingFutureEntries;
         cropPools.set(cropName, pool);
 
         return {
@@ -983,8 +1492,8 @@ const overdueOrders = useMemo(() => {
           customer: getOrderCustomer(row),
           crop: cropName,
           dueDate,
-          shortageQty: result.shortageQty,
-          newTowers: result.newTowersNeeded,
+          shortageQty,
+          newTowers,
           status: getOrderStatus(row),
         };
       })
@@ -1050,7 +1559,22 @@ const overdueOrders = useMemo(() => {
           new Date(getOrderRequestedDeliveryDate(b) || "2100-01-01").getTime()
       );
 
-    const cropPools = buildCropPools(inventoryByCrop);
+    const cropPools = new Map<
+      string,
+      {
+        readyLbs: number;
+        readyPlants: number;
+        futureEntries: Array<{ readyDate: string; lbs: number; plants: number }>;
+      }
+    >();
+
+    for (const [cropName, cropInventory] of inventoryByCrop.entries()) {
+      cropPools.set(cropName, {
+        readyLbs: cropInventory.readyNowLbs,
+        readyPlants: cropInventory.readyNowPlants,
+        futureEntries: cropInventory.futureEntries.map((entry) => ({ ...entry })),
+      });
+    }
 
     const buckets = new Map<
       string,
@@ -1068,18 +1592,42 @@ const overdueOrders = useMemo(() => {
       const dueDate = getOrderRequestedDeliveryDate(row);
       const unitType = getOrderUnitType(row);
       const qtyNeeded = toNumber(getOrderQuantityNeeded(row));
+      const qtyNeededInLbs = quantityToLbs(unitType, qtyNeeded);
       const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
 
-      const pool = cropPools.get(cropName) || {
-        readyLbs: 0,
-        readyPlants: 0,
-        futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
-      };
+      const pool =
+        cropPools.get(cropName) || {
+          readyLbs: 0,
+          readyPlants: 0,
+          futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
+        };
 
-      const result = allocateOrderAgainstPool(pool, cropName, dueDate, unitType, qtyNeeded, avgQtyPerTower, true);
+      let availableLbsByDue = pool.readyLbs;
+      let availablePlantsByDue = pool.readyPlants;
+      const remainingFutureEntries: Array<{ readyDate: string; lbs: number; plants: number }> = [];
+
+      for (const entry of pool.futureEntries) {
+        if (dueDate && entry.readyDate && entry.readyDate <= dueDate) {
+          availableLbsByDue += entry.lbs;
+          availablePlantsByDue += entry.plants;
+        } else {
+          remainingFutureEntries.push(entry);
+        }
+      }
+
+      const shortageLbs = Math.max(0, qtyNeededInLbs - availableLbsByDue);
+      const newTowers = shortageLbs > 0 ? Math.ceil(shortageLbs / avgQtyPerTower) : 0;
+
+      const consumedLbs = Math.min(qtyNeededInLbs, availableLbsByDue);
+      const consumedPlants = Math.min(
+        unitType === "Plants" ? qtyNeeded : Math.round((consumedLbs * 16) / 6),
+        availablePlantsByDue
+      );
+
+      pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
+      pool.readyPlants = Math.max(0, availablePlantsByDue - consumedPlants);
+      pool.futureEntries = remainingFutureEntries;
       cropPools.set(cropName, pool);
-
-      const newTowers = result.newTowersNeeded;
 
       if (newTowers <= 0 || !dueDate) continue;
 
@@ -1129,24 +1677,18 @@ const overdueOrders = useMemo(() => {
   const saveQuickAction = async () => {
     setMessage("");
 
-    if (!tower || !crop || !entryDate) {
-      setMessage("Please select crop, tower, and date.");
+    if ((!tower && mode !== "Farmers Market") || !crop || !entryDate) {
+      setMessage("Please select crop and date.");
       return;
     }
 
-    const quickTowerErr = validateTowerName(tower);
-    if (quickTowerErr) {
-      setMessage(quickTowerErr);
-      return;
-    }
-
-    if (["Harvest", "Scrapped", "Pack"].includes(mode) && !lbs) {
+    if ((mode === "Harvest" || mode === "Farmers Market" || mode === "Scrapped" || mode === "Pack") && !lbs) {
       setMessage("Please enter quantity for this action.");
       return;
     }
 
     const enteredQty = Number(lbs || 0);
-    const convertedLbs = ["Harvest", "Scrapped", "Pack"].includes(mode)
+    const convertedLbs = ["Harvest", "Farmers Market", "Scrapped", "Pack"].includes(mode)
       ? (quickEntryUnitType === "Plants" ? "" : quantityToLbs(quickEntryUnitType, enteredQty))
       : "";
     const convertedPods = quickEntryUnitType === "Plants" ? Number(lbs || 0) : (podsChanged ? Number(podsChanged) : "");
@@ -1154,7 +1696,7 @@ const overdueOrders = useMemo(() => {
     const payload = {
       action: "saveStaffAction",
       mode,
-      tower,
+      tower: mode === "Farmers Market" ? "" : tower,
       crop,
       lbs: convertedLbs,
       podsChanged: convertedPods,
@@ -1162,7 +1704,7 @@ const overdueOrders = useMemo(() => {
       stage,
       date: entryDate,
       scrapType,
-      note: [note, ["Harvest", "Pack"].includes(mode) ? `Unit: ${quickEntryUnitType}; Qty Entered: ${enteredQty}` : ""].filter(Boolean).join(" | "),
+      note: [note, ["Harvest", "Farmers Market", "Pack"].includes(mode) ? `Unit: ${quickEntryUnitType}; Qty Entered: ${enteredQty}` : ""].filter(Boolean).join(" | "),
     };
 
     try {
@@ -1189,12 +1731,19 @@ const overdueOrders = useMemo(() => {
     }
   };
 
-  const updateDraftOrderLine = (id: string, field: "crop" | "unitType" | "quantityNeeded", value: string) => {
-    setDraftOrderLines((prev) => prev.map((line) => line.id === id ? { ...line, [field]: value } : line));
-  };
-
-  const addDraftOrderRow = () => {
-    setDraftOrderLines((prev) => [...prev, { id: makeId(), crop: "", unitType: "Lbs" as OrderUnitType, quantityNeeded: "" }]);
+  const addCurrentLineToBatch = () => {
+    if (!salesCrop || !salesQuantityNeeded) {
+      setSalesSaveMessage("Please choose crop, unit, and quantity before adding a line item.");
+      return;
+    }
+    setDraftOrderLines((prev) => [
+      ...prev,
+      { id: makeId(), crop: salesCrop, unitType: salesUnitType, quantityNeeded: salesQuantityNeeded },
+    ]);
+    setSalesCrop("");
+    setSalesUnitType("Lbs");
+    setSalesQuantityNeeded("");
+    setSalesSaveMessage("Line item added to order.");
   };
 
   const removeDraftOrderLine = (id: string) => {
@@ -1203,13 +1752,11 @@ const overdueOrders = useMemo(() => {
 
   const startEditSalesOrder = (order: SalesOrderRow) => {
     setEditingSalesOrderRowNumber(order.rowNumber);
-    setDraftOrderLines([{
-      id: makeId(),
-      crop: getOrderCrop(order),
-      unitType: (getOrderUnitType(order) as OrderUnitType) || "Lbs",
-      quantityNeeded: String(getOrderQuantityNeeded(order) || ""),
-    }]);
+    setDraftOrderLines([]);
     setSalesCustomer(getOrderCustomer(order));
+    setSalesCrop(getOrderCrop(order));
+    setSalesUnitType((getOrderUnitType(order) as OrderUnitType) || "Lbs");
+    setSalesQuantityNeeded(String(getOrderQuantityNeeded(order) || ""));
     setSalesDeliveryDate(formatDateInput(getOrderRequestedDeliveryDate(order)));
     setSalesNotes(order.notes || order.Notes || "");
     setSalesOrderType((getOrderType(order) as "One-Time" | "Contract") || "One-Time");
@@ -1222,13 +1769,16 @@ const overdueOrders = useMemo(() => {
   const cancelEditSalesOrder = () => {
     setEditingSalesOrderRowNumber(null);
     setSalesCustomer("");
+    setSalesCrop("");
+    setSalesUnitType("Lbs");
+    setSalesQuantityNeeded("");
     setSalesDeliveryDate("");
     setSalesNotes("");
     setSalesOrderType("One-Time");
     setSalesFrequency("Weekly");
     setSalesContractStartDate("");
     setSalesContractEndDate("");
-    setDraftOrderLines([{ id: makeId(), crop: "", unitType: "Lbs", quantityNeeded: "" }]);
+    setDraftOrderLines([]);
     setSalesSaveMessage("");
   };
 
@@ -1249,7 +1799,12 @@ const overdueOrders = useMemo(() => {
   };
 
   const handleSaveOrder = async () => {
-    const lineItems = draftOrderLines.filter(l => l.crop.trim() && toNumber(l.quantityNeeded) > 0);
+    const currentLineValid = !!salesCrop && !!toNumber(salesQuantityNeeded);
+    const lineItems = editingSalesOrderRowNumber
+      ? currentLineValid
+        ? [{ id: makeId(), crop: salesCrop, unitType: salesUnitType, quantityNeeded: salesQuantityNeeded }]
+        : []
+      : [...draftOrderLines, ...(currentLineValid ? [{ id: makeId(), crop: salesCrop, unitType: salesUnitType, quantityNeeded: salesQuantityNeeded }] : [])];
 
     if (!salesCustomer || lineItems.length === 0) {
       setSalesSaveMessage("Please enter customer and at least one line item.");
@@ -1281,18 +1836,13 @@ const overdueOrders = useMemo(() => {
       }
 
       if (editingSalesOrderRowNumber) {
-        const editLine = lineItems[0];
-        if (!editLine) {
-          setSalesSaveMessage("Please enter crop and quantity.");
-          return;
-        }
         const result = await postToBackend({
           action: "updateSalesOrderRow",
           rowNumber: editingSalesOrderRowNumber,
           customer: salesCustomer,
-          crop: editLine.crop,
-          unitType: editLine.unitType,
-          quantityNeeded: toNumber(editLine.quantityNeeded),
+          crop: salesCrop,
+          unitType: salesUnitType,
+          quantityNeeded: toNumber(salesQuantityNeeded),
           requestedDeliveryDate: salesOrderType === "Contract" ? salesContractStartDate : salesDeliveryDate,
           availableQty: salesPlanner.availableQty,
           shortageQty: salesPlanner.shortageQty,
@@ -1393,7 +1943,12 @@ const overdueOrders = useMemo(() => {
 
   const handleOrderStatusChange = async (rowNumber: number, status: string) => {
     try {
-      const result = await postToBackend({ action: "updateOrderStatus", rowNumber, status });
+      const result = await postToBackend({
+        action: "updateOrderStatus",
+        rowNumber,
+        status,
+      });
+
       if (result.ok) {
         await loadSalesOrders();
       } else {
@@ -1404,71 +1959,78 @@ const overdueOrders = useMemo(() => {
     }
   };
 
-  const handleGroupStatusChange = async (groupKey: string, status: string) => {
-    const group = groupedSavedOrders.find((g) => g.key === groupKey);
-    if (!group) return;
-    try {
-      await Promise.all(
-        group.items.map((item) => postToBackend({ action: "updateOrderStatus", rowNumber: item.rowNumber, status }))
-      );
-      await loadSalesOrders();
-    } catch (error) {
-      console.error("handleGroupStatusChange error:", error);
-    }
-  };
-
   const handleSaveInventory = async () => {
-    if (!inventoryForm.tower || !inventoryForm.crop) {
-      dispatchInventory({ type: "SET_FIELD", field: "message", value: "Please enter tower and crop." });
+    if (!inventoryTower || !inventoryCrop) {
+      setInventoryMessage("Please enter tower and crop.");
       return;
     }
 
-    const towerErr = validateTowerName(inventoryForm.tower);
-    if (towerErr) {
-      dispatchInventory({ type: "SET_FIELD", field: "message", value: towerErr });
+    const towerErr = validateTowerName(inventoryTower);
+    if (towerErr) { setInventoryMessage(towerErr); return; }
+
+    if (inventorySeededDate && inventoryTransplantDate && inventoryTransplantDate < inventorySeededDate) {
+      setInventoryMessage("Transplant date cannot be before seeded date. Check for a typo (e.g. month/day swapped).");
+      return;
+    }
+    if (inventoryTransplantDate && inventoryEstimatedReadyDate && inventoryEstimatedReadyDate < inventoryTransplantDate) {
+      setInventoryMessage("Estimated ready date cannot be before transplant date.");
       return;
     }
 
     try {
-      dispatchInventory({ type: "SET_FIELD", field: "saving", value: true });
-      dispatchInventory({ type: "SET_FIELD", field: "message", value: "" });
+      setInventorySaving(true);
+      setInventoryMessage("");
 
-      const maxPods = toNumber(inventoryForm.maxPods) || getTowerMaxPods(inventoryForm.towerType);
-      const activePods = toNumber(inventoryForm.activePods) || maxPods;
-      const expectedLbs = inventoryForm.expectedLbs
-        ? Number(inventoryForm.expectedLbs)
-        : calculateExpectedLbs(inventoryForm.crop, activePods, inventoryForm.towerType);
-      const remainingExpectedLbs = inventoryForm.remainingExpectedLbs ? Number(inventoryForm.remainingExpectedLbs) : expectedLbs;
+      const maxPods = toNumber(inventoryMaxPods) || getTowerMaxPods(inventoryTowerType);
+      const activePods = toNumber(inventoryActivePods) || maxPods;
+      const expectedLbs = inventoryExpectedLbs
+  ? Number(inventoryExpectedLbs)
+  : calculateExpectedLbs(inventoryCrop, activePods, inventoryTowerType);
+      const remainingExpectedLbs = inventoryRemainingExpectedLbs ? Number(inventoryRemainingExpectedLbs) : expectedLbs;
 
       const result = await postToBackend({
         action: "saveProductionInventory",
-        tower: inventoryForm.tower,
-        towerType: inventoryForm.towerType,
+        tower: inventoryTower,
+        towerType: inventoryTowerType,
         maxPods,
         activePods,
-        crop: inventoryForm.crop,
-        stage: inventoryForm.stage,
-        seededDate: inventoryForm.seededDate,
-        transplantDate: inventoryForm.transplantDate,
-        estimatedReadyDate: inventoryForm.estimatedReadyDate,
+        crop: inventoryCrop,
+        stage: inventoryStage,
+        seededDate: inventorySeededDate,
+        transplantDate: inventoryTransplantDate,
+        estimatedReadyDate: inventoryEstimatedReadyDate,
         expectedLbs,
         remainingExpectedLbs,
-        status: inventoryForm.status,
-        notes: inventoryForm.notes,
+        status: inventoryStatus,
+        notes: inventoryNotes,
+        harvestType: inventoryHarvestType,
       });
 
       if (result.ok) {
-        dispatchInventory({ type: "SET_FIELD", field: "message", value: "Production inventory saved." });
-        dispatchInventory({ type: "RESET" });
+        setInventoryMessage("Production inventory saved.");
+        setInventoryTower("");
+        setInventoryTowerType("Low Density");
+        setInventoryMaxPods(String(getTowerMaxPods("Low Density")));
+        setInventoryActivePods(String(getTowerMaxPods("Low Density")));
+        setInventoryCrop("");
+        setInventoryStage("Growing");
+        setInventorySeededDate("");
+        setInventoryTransplantDate("");
+        setInventoryEstimatedReadyDate("");
+        setInventoryExpectedLbs("");
+        setInventoryRemainingExpectedLbs("");
+        setInventoryStatus("Active");
+        setInventoryNotes("");
+        setInventoryHarvestType("");
         await loadProductionInventory();
       } else {
-        dispatchInventory({ type: "SET_FIELD", field: "message", value: result.message || "Unable to save production inventory." });
+        setInventoryMessage(result.message || "Unable to save production inventory.");
       }
     } catch (error) {
       console.error("handleSaveInventory error:", error);
-      dispatchInventory({ type: "SET_FIELD", field: "message", value: "Error saving production inventory." });
+      setInventoryMessage("Error saving production inventory.");
     } finally {
-      dispatchInventory({ type: "SET_FIELD", field: "saving", value: false });
+      setInventorySaving(false);
     }
   };
 
@@ -1522,7 +2084,7 @@ const overdueOrders = useMemo(() => {
     const newActivePods = Math.max(0, currentActivePods - podsToRemove);
     const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - lbsRemoved) * 100) / 100);
 
-    const keepRowActiveForRepeatHarvest = adjustMode === "Harvest" && isRepeatHarvestCrop(cropName) && podsToRemove === 0;
+    const keepRowActiveForRepeatHarvest = adjustMode === "Harvest" && getEffectiveHarvestType(selected) === "Trim Harvest" && podsToRemove === 0;
     const newStatus = keepRowActiveForRepeatHarvest ? (getInventoryStatus(selected) || "Active") : (newActivePods === 0 ? (adjustMode === "Harvest" ? "Harvested" : "Scrapped") : getInventoryStatus(selected) || "Active");
     const newStage = keepRowActiveForRepeatHarvest ? (getInventoryStage(selected) || "Growing") : (newActivePods === 0 ? (adjustMode === "Harvest" ? "Harvested" : "Scrapped") : getInventoryStage(selected) || "Growing");
     const updatedNotes = `${getInventoryNotes(selected) || ""} ${adjustMode} ${podsToRemove} pods / ${lbsRemoved} lbs on ${formatDateInput(
@@ -1587,7 +2149,22 @@ const overdueOrders = useMemo(() => {
 
 
 const handleEditInventory = (item: ProductionInventoryRow) => {
-  dispatchEditInventory({ type: "LOAD", item });
+  setEditInventoryMessage("");
+  setEditingInventoryRowNumber(String(item.rowNumber));
+  setEditInventoryTower(getInventoryTower(item));
+  setEditInventoryTowerType(getInventoryTowerType(item) || "Low Density");
+  setEditInventoryMaxPods(String(getInventoryMaxPods(item)));
+  setEditInventoryActivePods(String(getInventoryActivePods(item)));
+  setEditInventoryCrop(getInventoryCrop(item));
+  setEditInventoryStage(getInventoryStage(item) || "Growing");
+  setEditInventorySeededDate(formatDateInput(getInventorySeededDate(item)));
+  setEditInventoryTransplantDate(formatDateInput(getInventoryTransplantDate(item)));
+  setEditInventoryEstimatedReadyDate(formatDateInput(getInventoryEffectiveReadyDate(item)));
+  setEditInventoryHarvestType(getInventoryHarvestType(item));
+  setEditInventoryExpectedLbs(String(getInventoryExpectedLbs(item)));
+  setEditInventoryRemainingExpectedLbs(String(getInventoryRemainingExpectedLbs(item)));
+  setEditInventoryStatus(getInventoryStatus(item) || "Active");
+  setEditInventoryNotes(getInventoryNotes(item));
 
   setTimeout(() => {
     const editPanel = document.getElementById("edit-production-inventory");
@@ -1597,70 +2174,99 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   }, 100);
 };
   const handleSaveInventoryEdits = async () => {
-    if (!editInventoryForm.rowNumber) {
-      dispatchEditInventory({ type: "SET_FIELD", field: "message", value: "No inventory row selected." });
+    if (!editingInventoryRowNumber) {
+      setEditInventoryMessage("No inventory row selected.");
       return;
     }
 
-    if (!editInventoryForm.tower || !editInventoryForm.crop) {
-      dispatchEditInventory({ type: "SET_FIELD", field: "message", value: "Please enter tower and crop." });
+    if (!editInventoryTower || !editInventoryCrop) {
+      setEditInventoryMessage("Please enter tower and crop.");
       return;
     }
 
-    const towerErr = validateTowerName(editInventoryForm.tower);
-    if (towerErr) {
-      dispatchEditInventory({ type: "SET_FIELD", field: "message", value: towerErr });
+    const editTowerErr = validateTowerName(editInventoryTower);
+    if (editTowerErr) { setEditInventoryMessage(editTowerErr); return; }
+
+    if (editInventorySeededDate && editInventoryTransplantDate && editInventoryTransplantDate < editInventorySeededDate) {
+      setEditInventoryMessage("Transplant date cannot be before seeded date. Check for a typo (e.g. month/day swapped).");
+      return;
+    }
+    if (editInventoryTransplantDate && editInventoryEstimatedReadyDate && editInventoryEstimatedReadyDate < editInventoryTransplantDate) {
+      setEditInventoryMessage("Estimated ready date cannot be before transplant date.");
       return;
     }
 
     try {
-      dispatchEditInventory({ type: "SET_FIELD", field: "saving", value: true });
-      dispatchEditInventory({ type: "SET_FIELD", field: "message", value: "" });
+      setEditInventorySaving(true);
+      setEditInventoryMessage("");
 
       const result = await postToBackend({
         action: "updateProductionInventoryRow",
-        rowNumber: Number(editInventoryForm.rowNumber),
-        tower: editInventoryForm.tower,
-        towerType: editInventoryForm.towerType,
-        maxPods: toNumber(editInventoryForm.maxPods),
-        activePods: toNumber(editInventoryForm.activePods),
-        crop: editInventoryForm.crop,
-        stage: editInventoryForm.stage,
-        seededDate: editInventoryForm.seededDate,
-        transplantDate: editInventoryForm.transplantDate,
-        estimatedReadyDate: editInventoryForm.estimatedReadyDate,
-        expectedLbs: toNumber(editInventoryForm.expectedLbs),
-        remainingExpectedLbs: toNumber(editInventoryForm.remainingExpectedLbs),
-        status: editInventoryForm.status,
-        notes: editInventoryForm.notes,
+        rowNumber: Number(editingInventoryRowNumber),
+        tower: editInventoryTower,
+        towerType: editInventoryTowerType,
+        maxPods: toNumber(editInventoryMaxPods),
+        activePods: toNumber(editInventoryActivePods),
+        crop: editInventoryCrop,
+        stage: editInventoryStage,
+        seededDate: editInventorySeededDate,
+        transplantDate: editInventoryTransplantDate,
+        estimatedReadyDate: editInventoryEstimatedReadyDate,
+        expectedLbs: toNumber(editInventoryExpectedLbs),
+        remainingExpectedLbs: toNumber(editInventoryRemainingExpectedLbs),
+        status: editInventoryStatus,
+        notes: editInventoryNotes,
+        harvestType: editInventoryHarvestType,
       });
 
       if (result.ok) {
-        dispatchEditInventory({ type: "SET_FIELD", field: "message", value: "Inventory changes saved." });
+        setEditInventoryMessage("Inventory changes saved.");
         await loadProductionInventory();
       } else {
-        dispatchEditInventory({ type: "SET_FIELD", field: "message", value: result.message || "Unable to save inventory changes." });
+        setEditInventoryMessage(result.message || "Unable to save inventory changes.");
       }
     } catch (error) {
       console.error("handleSaveInventoryEdits error:", error);
-      dispatchEditInventory({ type: "SET_FIELD", field: "message", value: "Error saving inventory changes." });
+      setEditInventoryMessage("Error saving inventory changes.");
     } finally {
-      dispatchEditInventory({ type: "SET_FIELD", field: "saving", value: false });
+      setEditInventorySaving(false);
     }
   };
 
   const clearEditInventoryForm = () => {
-    dispatchEditInventory({ type: "RESET" });
+    setEditingInventoryRowNumber("");
+    setEditInventoryTower("");
+    setEditInventoryTowerType("Low Density");
+    setEditInventoryMaxPods("");
+    setEditInventoryActivePods("");
+    setEditInventoryCrop("");
+    setEditInventoryStage("Growing");
+    setEditInventorySeededDate("");
+    setEditInventoryTransplantDate("");
+    setEditInventoryEstimatedReadyDate("");
+    setEditInventoryExpectedLbs("");
+    setEditInventoryRemainingExpectedLbs("");
+    setEditInventoryStatus("Active");
+    setEditInventoryNotes("");
+    setEditInventoryHarvestType("");
+    setEditInventoryMessage("");
   };
 
   const handleMarkPlanted = async (task: { crop: string; totalTowers: number; earliestDueDate: string }) => {
     try {
       setDailyMessage("");
-      setMarkPlantedLoading(task.crop);
 
-      const selectedTowerType = plantingTowerType[task.crop] || "Low Density";
-      const maxPods = getTowerMaxPods(selectedTowerType);
-      const expectedLbs = calculateExpectedLbs(task.crop, maxPods, selectedTowerType);
+      const trayType = plantingTrayType[task.crop] || "Full Tray";
+      const maxPods = HALF_TRAY_SEEDS; // each tower slot = 44 pods (Low Density)
+      const expectedLbs = calculateExpectedLbs(task.crop, maxPods, "Low Density");
+
+      // Determine how many inventory rows to create
+      const fullTrays = trayType === "Full Tray" ? Math.ceil(task.totalTowers / 2) : 0;
+      const halfTrays = trayType === "Full Tray" ? 0 : task.totalTowers;
+      const towersToCreate = trayType === "Full Tray" ? fullTrays * 2 : task.totalTowers;
+      const trayNote = trayType === "Full Tray"
+        ? `${fullTrays} full tray${fullTrays !== 1 ? "s" : ""} (${towersToCreate} towers)`
+        : `${halfTrays} half tray${halfTrays !== 1 ? "s" : ""} (${task.totalTowers} towers)`;
 
       const matchingOrders = salesOrders
         .filter((order) => {
@@ -1680,12 +2286,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         tower: "",
         crop: task.crop,
         lbs: "",
-        podsChanged: maxPods * task.totalTowers,
+        podsChanged: maxPods * towersToCreate,
         status: "Completed",
         stage: "Seeded",
         date: formatDateInput(new Date()),
         scrapType: "",
-        note: `Planted ${task.totalTowers} towers for due date ${task.earliestDueDate || ""}. Tower Type: ${selectedTowerType}`,
+        note: `Planted ${trayNote} for due date ${task.earliestDueDate || ""}.`,
       });
 
       if (!actionResult.ok) {
@@ -1693,11 +2299,11 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         return;
       }
 
-      for (let i = 0; i < task.totalTowers; i += 1) {
+      for (let i = 0; i < towersToCreate; i += 1) {
         const invResult = await postToBackend({
           action: "saveProductionInventory",
           tower: "",
-          towerType: selectedTowerType,
+          towerType: "Low Density",
           maxPods,
           activePods: maxPods,
           crop: task.crop,
@@ -1708,7 +2314,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           expectedLbs,
           remainingExpectedLbs: expectedLbs,
           status: "Active",
-          notes: `Created from Plant Today task. Due by ${task.earliestDueDate || ""}`,
+          notes: `Created from Plant Today task: ${trayNote}. Due by ${task.earliestDueDate || ""}`,
         });
 
         if (!invResult.ok) {
@@ -1751,15 +2357,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     } catch (error) {
       console.error("handleMarkPlanted error:", error);
       setDailyMessage("Error marking planted.");
-    } finally {
-      setMarkPlantedLoading(null);
     }
   };
 
   const handleMarkTransplanted = async () => {
     try {
       setDailyMessage("");
-      setTransplantLoading(true);
 
       if (!transplantRowNumber) {
         setDailyMessage("Please select a seeded item to transplant.");
@@ -1768,12 +2371,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
       if (!transplantTower) {
         setDailyMessage("Please enter the tower for transplant.");
-        return;
-      }
-
-      const transplantTowerErr = validateTowerName(transplantTower);
-      if (transplantTowerErr) {
-        setDailyMessage(transplantTowerErr);
         return;
       }
 
@@ -1900,36 +2497,44 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     } catch (error) {
       console.error("handleMarkTransplanted error:", error);
       setDailyMessage("Error marking transplanted.");
-    } finally {
-      setTransplantLoading(false);
     }
   };
 
-  const startReadyHarvestAction = (item: ProductionInventoryRow, actionType?: "Full Harvest" | "Trim Harvest") => {
-    dispatchHarvest({ type: "START", item, actionType });
+  const startReadyHarvestAction = (item: ProductionInventoryRow) => {
+    const rowId = String(item.rowNumber);
+    setActiveHarvestRowNumber(rowId);
+    setHarvestActionType(getEffectiveHarvestType(item));
+    setHarvestPodsValue(String(getInventoryActivePods(item) || ""));
+    setHarvestOutputUnit("Lbs");
+    setHarvestOutputQty(String(getInventoryRemainingExpectedLbs(item) || ""));
+    setHarvestNote("");
   };
 
   const clearReadyHarvestAction = () => {
-    dispatchHarvest({ type: "CLEAR" });
+    setActiveHarvestRowNumber("");
+    setHarvestActionType("Full Harvest");
+    setHarvestPodsValue("");
+    setHarvestOutputUnit("Lbs");
+    setHarvestOutputQty("");
+    setHarvestNote("");
   };
 
   const handleReadyHarvestSubmit = async () => {
     try {
       setDailyMessage("");
-      setHarvestLoading(true);
 
-      const selected = productionInventory.find((row) => String(row.rowNumber) === harvestForm.activeRowNumber);
+      const selected = productionInventory.find((row) => String(row.rowNumber) === activeHarvestRowNumber);
       if (!selected) {
         setDailyMessage("Please choose a ready-to-harvest row.");
         return;
       }
 
-      const outputQty = toNumber(harvestForm.outputQty);
-      const podsWorked = toNumber(harvestForm.podsValue);
+      const outputQty = toNumber(harvestOutputQty);
+      const podsWorked = toNumber(harvestPodsValue);
       const currentActivePods = toNumber(getInventoryActivePods(selected));
       const currentRemainingLbs = toNumber(getInventoryRemainingExpectedLbs(selected));
       const currentExpectedLbs = toNumber(getInventoryExpectedLbs(selected));
-      const harvestLbs = quantityToLbs(harvestForm.outputUnit, outputQty);
+      const harvestLbs = quantityToLbs(harvestOutputUnit, outputQty);
 
       if (!outputQty || harvestLbs < 0) {
         setDailyMessage("Please enter harvested quantity.");
@@ -1937,7 +2542,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       }
 
       if (!podsWorked) {
-        setDailyMessage(harvestForm.actionType === "Trim Harvest" ? "Please enter how many pods were trimmed." : "Please enter how many pods were harvested.");
+        setDailyMessage(harvestActionType === "Trim Harvest" ? "Please enter how many pods were trimmed." : "Please enter how many pods were harvested.");
         return;
       }
 
@@ -1951,23 +2556,17 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         return;
       }
 
-      const isFullHarvest = harvestForm.actionType === "Full Harvest";
+      const isFullHarvest = harvestActionType === "Full Harvest";
       const newActivePods = isFullHarvest ? Math.max(0, currentActivePods - podsWorked) : currentActivePods;
       const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - harvestLbs) * 100) / 100);
       const isFinished = newActivePods <= 0 || newRemainingLbs <= 0.01;
-      const currentTrimCount = toNumber(getInventoryTrimCount(selected));
-      const newTrimCount = !isFullHarvest && !isFinished ? currentTrimCount + 1 : currentTrimCount;
-      const isFinalTrim = newTrimCount >= MAX_TRIMS;
-      const newStatus = isFinished || isFinalTrim ? "Harvested" : getInventoryStatus(selected) || "Active";
-      const newStage = isFinished || isFinalTrim ? "Harvested" : !isFullHarvest ? "Trimmed" : getInventoryStage(selected) || "Ready";
-      const newEstimatedReadyDate = !isFinished && !isFinalTrim && !isFullHarvest
-        ? addDays(formatDateInput(new Date()), TRIM_REGROWTH_DAYS)
-        : getInventoryEstimatedReadyDate(selected);
+      const newStatus = isFinished ? "Harvested" : getInventoryStatus(selected) || "Active";
+      const newStage = isFinished ? "Harvested" : getInventoryStage(selected) || "Ready";
       const actionNote = [
-        harvestForm.actionType,
-        `${outputQty} ${getUnitLabel(harvestForm.outputUnit)}`,
+        harvestActionType,
+        `${outputQty} ${getUnitLabel(harvestOutputUnit)}`,
         isFullHarvest ? `${podsWorked} pods harvested` : `${podsWorked} pods trimmed`,
-        harvestForm.note,
+        harvestNote,
       ]
         .filter(Boolean)
         .join(" | " );
@@ -1980,7 +2579,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         lbs: harvestLbs,
         podsChanged: isFullHarvest ? podsWorked : "",
         status: isFinished ? "Completed" : "Partial",
-        stage: isFinished ? "Harvested" : harvestForm.actionType === "Trim Harvest" ? "Trimmed" : "Ready",
+        stage: isFinished ? "Harvested" : harvestActionType === "Trim Harvest" ? "Trimmed" : "Ready",
         date: formatDateInput(new Date()),
         scrapType: "",
         note: actionNote,
@@ -2003,11 +2602,10 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         stage: newStage,
         seededDate: getInventorySeededDate(selected),
         transplantDate: getInventoryTransplantDate(selected),
-        estimatedReadyDate: newEstimatedReadyDate,
+        estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
         expectedLbs: currentExpectedLbs,
         remainingExpectedLbs: newRemainingLbs,
         status: newStatus,
-        trimCount: newTrimCount,
         notes: updatedNotes,
       });
 
@@ -2019,10 +2617,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       setDailyMessage(
         isFinished
           ? `Harvest saved for ${getInventoryCrop(selected)}. That row is complete and removed from Ready to Harvest.`
-          : isFinalTrim
-          ? `Final trim saved for ${getInventoryCrop(selected)}. Tower is complete — time to seed a replacement.`
-          : !isFullHarvest
-          ? `Trim ${newTrimCount}/${MAX_TRIMS} saved for ${getInventoryCrop(selected)}. Ready again in ${TRIM_REGROWTH_DAYS} days.`
           : `Harvest saved for ${getInventoryCrop(selected)}.`
       );
       clearReadyHarvestAction();
@@ -2030,8 +2624,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     } catch (error) {
       console.error("handleReadyHarvestSubmit error:", error);
       setDailyMessage("Error marking harvested.");
-    } finally {
-      setHarvestLoading(false);
     }
   };
 
@@ -2045,7 +2637,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   }) => {
     try {
       setDailyMessage("");
-      setPackLoadingRow(task.rowNumber);
 
       const result = await postToBackend({
         action: "saveStaffAction",
@@ -2081,54 +2672,27 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     } catch (error) {
       console.error("handleMarkPacked error:", error);
       setDailyMessage("Error marking packed.");
-    } finally {
-      setPackLoadingRow(null);
     }
   };
 
-  const uniqueModes = useMemo(
-    () => Array.from(new Set(staffRows.map((r) => getStaffMode(r)).filter(Boolean))).sort(),
-    [staffRows]
-  );
-
-  const uniqueCrops = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          [
-            ...Object.keys(CROP_PROFILES),
-            ...staffRows.map((r) => getStaffCrop(r)),
-            ...salesOrders.map((r) => getOrderCrop(r)),
-            ...productionInventory.map((r) => getInventoryCrop(r)),
-          ]
-            .filter(Boolean)
-            .map((crop) => formatCropLabel(String(crop)))
-        )
-      ).sort((a, b) => a.localeCompare(b)),
-    [staffRows, salesOrders, productionInventory]
-  );
-
-  const uniqueTowers = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          [...staffRows.map((r) => getStaffTower(r)), ...productionInventory.map((r) => getInventoryTower(r))].filter(
-            Boolean
-          )
-        )
-      ).sort(),
-    [staffRows, productionInventory]
-  );
-
-  const uniqueCustomers = useMemo(
-    () => Array.from(new Set(salesOrders.map((r) => getOrderCustomer(r)).filter(Boolean))).sort(),
-    [salesOrders]
-  );
-
-  const uniqueOrderStatuses = useMemo(
-    () => Array.from(new Set(salesOrders.map((r) => getOrderStatus(r)).filter(Boolean))).sort(),
-    [salesOrders]
-  );
+  const uniqueModes = Array.from(new Set(staffRows.map((r) => getStaffMode(r)).filter(Boolean))).sort();
+ const uniqueCrops = Array.from(
+  new Set(
+    [
+      ...Object.keys(CROP_PROFILES),
+      ...staffRows.map((r) => getStaffCrop(r)),
+      ...salesOrders.map((r) => getOrderCrop(r)),
+      ...productionInventory.map((r) => getInventoryCrop(r)),
+    ]
+      .filter(Boolean)
+      .map((crop) => formatCropLabel(String(crop)))
+  )
+).sort((a, b) => a.localeCompare(b));
+  const uniqueTowers = Array.from(
+    new Set([...staffRows.map((r) => getStaffTower(r)), ...productionInventory.map((r) => getInventoryTower(r))].filter(Boolean))
+  ).sort();
+  const uniqueCustomers = Array.from(new Set(salesOrders.map((r) => getOrderCustomer(r)).filter(Boolean))).sort();
+  const uniqueOrderStatuses = Array.from(new Set(salesOrders.map((r) => getOrderStatus(r)).filter(Boolean))).sort();
 
   return (
     <div style={pageStyle}>
@@ -2143,12 +2707,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             flexWrap: "wrap",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 18, minWidth: 0, flex: "1 1 420px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 18, minWidth: 0, flex: "1 1 200px" }}>
             <img
               src="/gardennobkgd.png"
               alt="Switchpoint Garden"
               style={{
-                height: 112,
+                height: "clamp(64px, 14vw, 112px)",
                 width: "auto",
                 display: "block",
                 maxWidth: "100%",
@@ -2185,176 +2749,1628 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         </div>
 
         {activePage === "dashboard" && (
-          <Dashboard
-            dashboardStats={dashboardStats}
-            executiveAlerts={executiveAlerts}
-            shortageAlerts={shortageAlerts}
-            seedingCalendar={seedingCalendar}
-            filteredRecentActivity={filteredRecentActivity}
-            groupedSavedOrders={groupedSavedOrders}
-            uniqueModes={uniqueModes}
-            uniqueCrops={uniqueCrops}
-            uniqueTowers={uniqueTowers}
-            uniqueOrderStatuses={uniqueOrderStatuses}
-            uniqueCustomers={uniqueCustomers}
-            salesCustomer={salesCustomer}
-            salesNotes={salesNotes}
-            salesPlanner={salesPlanner}
-            salesOrderType={salesOrderType}
-            salesFrequency={salesFrequency}
-            salesDeliveryDate={salesDeliveryDate}
-            salesContractStartDate={salesContractStartDate}
-            salesContractEndDate={salesContractEndDate}
-            draftOrderLines={draftOrderLines}
-            editingSalesOrderRowNumber={editingSalesOrderRowNumber}
-            salesSaving={salesSaving}
-            salesSaveMessage={salesSaveMessage}
-            savedOrderStatusFilter={savedOrderStatusFilter}
-            savedOrderCropFilter={savedOrderCropFilter}
-            savedOrderCustomerFilter={savedOrderCustomerFilter}
-            savedOrderDueFilter={savedOrderDueFilter}
-            expandedSavedOrderGroups={expandedSavedOrderGroups}
-            filterMode={filterMode}
-            filterCrop={filterCrop}
-            filterTower={filterTower}
-            setSalesCustomer={setSalesCustomer}
-            setSalesNotes={setSalesNotes}
-            setSalesOrderType={setSalesOrderType}
-            setSalesFrequency={setSalesFrequency}
-            setSalesDeliveryDate={setSalesDeliveryDate}
-            setSalesContractStartDate={setSalesContractStartDate}
-            setSalesContractEndDate={setSalesContractEndDate}
-            setSavedOrderStatusFilter={setSavedOrderStatusFilter}
-            setSavedOrderCropFilter={setSavedOrderCropFilter}
-            setSavedOrderCustomerFilter={setSavedOrderCustomerFilter}
-            setSavedOrderDueFilter={setSavedOrderDueFilter}
-            setExpandedSavedOrderGroups={setExpandedSavedOrderGroups}
-            setFilterMode={setFilterMode}
-            setFilterCrop={setFilterCrop}
-            setFilterTower={setFilterTower}
-            updateDraftOrderLine={updateDraftOrderLine}
-            addDraftOrderRow={addDraftOrderRow}
-            cancelEditSalesOrder={cancelEditSalesOrder}
-            handleSaveOrder={handleSaveOrder}
-            handleOrderStatusChange={handleOrderStatusChange}
-            handleGroupStatusChange={handleGroupStatusChange}
-            startEditSalesOrder={startEditSalesOrder}
-            handleCancelSalesOrder={handleCancelSalesOrder}
-            removeDraftOrderLine={removeDraftOrderLine}
-          />
+          <div style={sectionStackStyle}>
+            <ResponsiveStatGrid>
+              <StatCard label="Qty on Order" value={dashboardStats.totalQtyOnOrder} />
+              <StatCard label="New Towers Needed" value={dashboardStats.totalNewTowersNeeded} />
+              <StatCard label="Active Inventory Entries" value={dashboardStats.activeInventoryCount} />
+              <StatCard label="Ready Inventory" value={dashboardStats.readyInventory} />
+              <StatCard label="Overdue Orders" value={dashboardStats.overdueOrders} />
+              <StatCard label="Harvested This Week (lbs)" value={dashboardStats.harvestedThisWeek} />
+              <StatCard label="Scrapped This Week (lbs)" value={dashboardStats.scrappedThisWeek} />
+              <StatCard label="Harvested Prev Week (lbs)" value={dashboardStats.harvestedPrevWeek} />
+              <StatCard label="Scrapped Prev Week (lbs)" value={dashboardStats.scrappedPrevWeek} />
+              <StatCard label="Pods in Production" value={dashboardStats.podsInProduction} />
+            </ResponsiveStatGrid>
+
+            <ResponsiveTwoPanelGrid>
+              <Panel title="Executive Alerts">
+                <div style={{ maxHeight: 420, overflowY: "auto", overflowX: "auto" }}>
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Priority</th>
+                        <th style={thStyle}>Alert</th>
+                        <th style={thStyle}>Detail</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {executiveAlerts.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} style={tdStyle}>No critical alerts right now.</td>
+                        </tr>
+                      ) : (
+                        executiveAlerts.map((alert, index) => (
+                          <tr key={`${alert.title}-${index}`}>
+                            <td style={tdStyle}>{alert.level}</td>
+                            <td style={tdStyle}>{alert.title}</td>
+                            <td style={tdStyle}>{alert.detail}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Panel>
+
+              <Panel title="Short Orders / Planting Pressure">
+                <TableScroll>
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Customer</th>
+                        <th style={thStyle}>Crop</th>
+                        <th style={thStyle}>Due Date</th>
+                        <th style={thStyle}>Shortage Qty</th>
+                        <th style={thStyle}>New Towers</th>
+                        <th style={thStyle}>Status</th>
+                        <th style={thStyle}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shortageAlerts.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} style={tdStyle}>No shortage warnings right now.</td>
+                        </tr>
+                      ) : (
+                        shortageAlerts.slice(0, 10).map((item) => (
+                          <tr key={item.rowNumber}>
+                            <td style={tdStyle}>{item.customer}</td>
+                            <td style={tdStyle}>{item.crop}</td>
+                            <td style={tdStyle}>{formatDateDisplay(item.dueDate)}</td>
+                            <td style={tdStyle}>{item.shortageQty}</td>
+                            <td style={tdStyle}>{item.newTowers}</td>
+                            <td style={tdStyle}>{item.status}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </TableScroll>
+              </Panel>
+            </ResponsiveTwoPanelGrid>
+
+            <ResponsiveTwoPanelGrid>
+              <Panel title="Seeding Calendar">
+                <TableScroll>
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Seed Week</th>
+                        <th style={thStyle}>Crop</th>
+                        <th style={thStyle}>Towers</th>
+                        <th style={thStyle}>Seed By</th>
+                        <th style={thStyle}>Ready By</th>
+                        <th style={thStyle}>Orders</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {seedingCalendar.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} style={tdStyle}>No seeding needed yet.</td>
+                        </tr>
+                      ) : (
+                        seedingCalendar.flatMap(([weekOf, items]) =>
+                          items.map((item, index) => (
+                            <tr key={`${weekOf}-${item.crop}-${item.seedByDate}`}>
+                              <td style={tdStyle}>{index === 0 ? formatDateDisplay(weekOf) : ""}</td>
+                              <td style={tdStyle}>{item.crop}</td>
+                              <td style={tdStyle}>{item.towers}</td>
+                              <td style={tdStyle}>{formatDateDisplay(item.seedByDate)}</td>
+                              <td style={tdStyle}>{formatDateDisplay(item.firstDueDate)}</td>
+                              <td style={tdStyle}>{item.orders}</td>
+                            </tr>
+                          ))
+                        )
+                      )}
+                    </tbody>
+                  </table>
+                </TableScroll>
+              </Panel>
+
+              <Panel title="Sales Planner / Order Planner">
+                <FormGrid columns={2}>
+                  <Field label="Customer">
+                    <input value={salesCustomer} onChange={(e) => setSalesCustomer(e.target.value)} style={inputStyle} />
+                  </Field>
+
+                  <Field label="Current Crop Line">
+                    <select value={salesCrop} onChange={(e) => setSalesCrop(e.target.value)} style={inputStyle}>
+                      <option value="">Select Crop</option>
+                      {uniqueCrops.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Order Type">
+                    <select value={salesOrderType} onChange={(e) => setSalesOrderType(e.target.value as "One-Time" | "Contract")} style={inputStyle}>
+                      <option value="One-Time">One-Time</option>
+                      <option value="Contract">Contract</option>
+                    </select>
+                  </Field>
+
+                  <Field label="Unit Type">
+                    <select value={salesUnitType} onChange={(e) => setSalesUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
+                      <option value="Lbs">Lbs</option>
+                      <option value="Plants">Plants</option>
+                      <option value="6oz Bag">6oz Bag</option>
+                      <option value="6oz Clamshell">6oz Clamshell</option>
+                      <option value="0.75oz Small Bag">0.75oz Small Bag</option>
+                    </select>
+                  </Field>
+
+                  <Field label={salesUnitType === "Plants" ? "Plants Needed" : salesUnitType === "Lbs" ? "Lbs Needed" : `Qty ${salesUnitType}`}>
+                    <input value={salesQuantityNeeded} onChange={(e) => setSalesQuantityNeeded(e.target.value)} style={inputStyle} />
+                  </Field>
+
+                  {salesOrderType === "One-Time" ? (
+                    <Field label="Requested Delivery Date">
+                      <input type="date" value={salesDeliveryDate} onChange={(e) => setSalesDeliveryDate(e.target.value)} style={inputStyle} />
+                    </Field>
+                  ) : (
+                    <>
+                      <Field label="Frequency">
+                        <select value={salesFrequency} onChange={(e) => setSalesFrequency(e.target.value)} style={inputStyle}>
+                          <option value="Weekly">Weekly</option>
+                          <option value="Bi-Weekly">Bi-Weekly</option>
+                          <option value="Monthly">Monthly</option>
+                        </select>
+                      </Field>
+
+                      <Field label="Contract Start Date">
+                        <input type="date" value={salesContractStartDate} onChange={(e) => setSalesContractStartDate(e.target.value)} style={inputStyle} />
+                      </Field>
+
+                      <Field label="Contract End Date">
+                        <input type="date" value={salesContractEndDate} onChange={(e) => setSalesContractEndDate(e.target.value)} style={inputStyle} />
+                      </Field>
+                    </>
+                  )}
+                </FormGrid>
+
+                <Field label="Notes">
+                  <textarea value={salesNotes} onChange={(e) => setSalesNotes(e.target.value)} style={textareaStyle} />
+                </Field>
+
+                <MetricGrid>
+                  <MiniMetric label={`Available ${salesPlanner.unitLabel}`} value={salesPlanner.availableQty} />
+                  <MiniMetric label={`Shortage ${salesPlanner.unitLabel}`} value={salesPlanner.shortageQty} />
+                  <MiniMetric label="Current Line Lbs" value={salesPlanner.qtyNeededInLbs} />
+                  <MiniMetric label="Towers Needed" value={salesPlanner.towersNeeded} />
+                  <MiniMetric label="Pipeline Towers" value={salesPlanner.pipelineTowers} />
+                  <MiniMetric label="New Towers To Plant" value={salesPlanner.newTowersToPlant} />
+                  <MiniMetric label="Estimated Ready Date" value={salesPlanner.estimatedReadyDate || "-"} />
+                  <MiniMetric label="Feasible" value={salesPlanner.deliveryFeasible ? "Yes" : "No"} />
+                </MetricGrid>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+                  {!editingSalesOrderRowNumber && (
+                    <button onClick={addCurrentLineToBatch} style={secondaryButtonStyle}>
+                      Add Line Item
+                    </button>
+                  )}
+                  {editingSalesOrderRowNumber ? (
+                    <button onClick={cancelEditSalesOrder} style={secondaryButtonStyle}>
+                      Cancel Edit
+                    </button>
+                  ) : null}
+                </div>
+
+                {(draftOrderLines.length > 0 || editingSalesOrderRowNumber) && (
+                  <TableScroll>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>Crop</th>
+                          <th style={thStyle}>Unit</th>
+                          <th style={thStyle}>Qty</th>
+                          <th style={thStyle}>Approx Lbs</th>
+                          {!editingSalesOrderRowNumber && <th style={thStyle}>Action</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {draftOrderLines.map((line) => (
+                          <tr key={line.id}>
+                            <td style={tdStyle}>{line.crop}</td>
+                            <td style={tdStyle}>{line.unitType}</td>
+                            <td style={tdStyle}>{line.quantityNeeded}</td>
+                            <td style={tdStyle}>{quantityToLbs(line.unitType, toNumber(line.quantityNeeded))}</td>
+                            {!editingSalesOrderRowNumber && (
+                              <td style={tdStyle}>
+                                <button onClick={() => removeDraftOrderLine(line.id)} style={secondaryButtonStyle}>Remove</button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </TableScroll>
+                )}
+
+                <ActionRow message={salesSaveMessage}>
+                  <button onClick={handleSaveOrder} style={primaryButtonStyle} disabled={salesSaving}>
+                    {salesSaving ? "Saving..." : editingSalesOrderRowNumber ? "Update Order" : "Save Order"}
+                  </button>
+                </ActionRow>
+              </Panel>
+            </ResponsiveTwoPanelGrid>
+
+            <div style={sectionStackStyle}>
+              <Panel title="Recent Activity">
+                <FormGrid columns={3}>
+                  <Field label="Mode Filter">
+                    <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} style={inputStyle}>
+                      <option value="All">All</option>
+                      {uniqueModes.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Crop Filter">
+                    <select value={filterCrop} onChange={(e) => setFilterCrop(e.target.value)} style={inputStyle}>
+                      <option value="All">All</option>
+                      {uniqueCrops.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Tower Filter">
+                    <select value={filterTower} onChange={(e) => setFilterTower(e.target.value)} style={inputStyle}>
+                      <option value="All">All</option>
+                      {uniqueTowers.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </FormGrid>
+
+                <div style={{ maxHeight: 420, overflowY: "auto", overflowX: "auto" }}>
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Time</th>
+                        <th style={thStyle}>Mode</th>
+                        <th style={thStyle}>Tower</th>
+                        <th style={thStyle}>Crop</th>
+                        <th style={thStyle}>Lbs</th>
+                        <th style={thStyle}>Pods</th>
+                        <th style={thStyle}>Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRecentActivity.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} style={tdStyle}>
+                            No recent activity.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredRecentActivity.slice(0, 10).map((row) => (
+                          <tr key={row.rowNumber}>
+                            <td style={tdStyle}>{formatDateTimeDisplay(getStaffTimestamp(row))}</td>
+                            <td style={tdStyle}>{getStaffMode(row)}</td>
+                            <td style={tdStyle}>{getStaffTower(row)}</td>
+                            <td style={tdStyle}>{getStaffCrop(row)}</td>
+                            <td style={tdStyle}>{getStaffLbs(row)}</td>
+                            <td style={tdStyle}>{getStaffPodsChanged(row)}</td>
+                            <td style={tdStyle}>{getStaffNote(row)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+                  Showing 10 most recent entries.
+                </div>
+              </Panel>
+
+              <Panel title="Saved Orders">
+                <FormGrid columns={3}>
+                  <Field label="Status Filter">
+                    <select value={savedOrderStatusFilter} onChange={(e) => setSavedOrderStatusFilter(e.target.value)} style={inputStyle}>
+                      <option value="All">All</option>
+                      {uniqueOrderStatuses.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Crop Filter">
+                    <select value={savedOrderCropFilter} onChange={(e) => setSavedOrderCropFilter(e.target.value)} style={inputStyle}>
+                      <option value="All">All</option>
+                      {uniqueCrops.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Customer Filter">
+                    <select value={savedOrderCustomerFilter} onChange={(e) => setSavedOrderCustomerFilter(e.target.value)} style={inputStyle}>
+                      <option value="All">All</option>
+                      {uniqueCustomers.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Due Filter">
+                    <select value={savedOrderDueFilter} onChange={(e) => setSavedOrderDueFilter(e.target.value as "All" | "Current Week")} style={inputStyle}>
+                      <option value="All">All</option>
+                      <option value="Current Week">Current Week</option>
+                    </select>
+                  </Field>
+                </FormGrid>
+
+                <div style={{ maxHeight: 290, overflowY: "auto", overflowX: "auto" }}>
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}></th>
+                        <th style={thStyle}>Customer</th>
+                        <th style={thStyle}>Delivery</th>
+                        <th style={thStyle}>Items</th>
+                        <th style={thStyle}>New Towers</th>
+                        <th style={thStyle}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groupedSavedOrders.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} style={tdStyle}>
+                            No saved orders.
+                          </td>
+                        </tr>
+                      ) : (
+                        groupedSavedOrders.flatMap((group) => {
+                          const expanded = !!expandedSavedOrderGroups[group.key];
+                          const summaryRow = (
+                            <tr key={group.key}>
+                              <td style={tdStyle}>
+                                <button
+                                  onClick={() =>
+                                    setExpandedSavedOrderGroups((prev) => ({
+                                      ...prev,
+                                      [group.key]: !prev[group.key],
+                                    }))
+                                  }
+                                  style={{ ...secondaryButtonStyle, padding: "6px 10px", minWidth: 38 }}
+                                >
+                                  {expanded ? "▾" : "▸"}
+                                </button>
+                              </td>
+                              <td style={tdStyle}>{group.customer}</td>
+                              <td style={tdStyle}>{formatDateDisplay(group.dueDate)}</td>
+                              <td style={tdStyle}>{group.items.length}</td>
+                              <td style={tdStyle}>{group.totalNewTowers}</td>
+                              <td style={tdStyle}>{group.status}</td>
+                            </tr>
+                          );
+
+                          if (!expanded) return [summaryRow];
+
+                          const detailRows = group.items.map((order) => (
+                            <tr key={`${group.key}-${order.rowNumber}`}>
+                              <td style={tdStyle}></td>
+                              <td style={{ ...tdStyle, paddingLeft: 24 }} colSpan={2}>
+                                {getOrderCrop(order)} — {getOrderUnitType(order)} × {getOrderQuantityNeeded(order)}
+                              </td>
+                              <td style={tdStyle}>{getOrderType(order)}{getOrderFrequency(order) ? ` / ${getOrderFrequency(order)}` : ""}</td>
+                              <td style={tdStyle}>{getOrderNewTowersToPlant(order)}</td>
+                              <td style={tdStyle}>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                  <select
+                                    value={getOrderStatus(order) || "Planned"}
+                                    onChange={(e) => handleOrderStatusChange(order.rowNumber, e.target.value)}
+                                    style={compactInputStyle}
+                                  >
+                                    <option value="Planned">Planned</option>
+                                    <option value="In Progress">In Progress</option>
+                                    <option value="Harvested">Harvested</option>
+                                    <option value="Packed">Packed</option>
+                                    <option value="Completed">Completed</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                  </select>
+                                  <button onClick={() => startEditSalesOrder(order)} style={primaryButtonStyle}>Edit</button>
+                                  <button onClick={() => handleCancelSalesOrder(order.rowNumber)} style={secondaryButtonStyle}>Cancel</button>
+                                </div>
+                              </td>
+                            </tr>
+                          ));
+
+                          return [summaryRow, ...detailRows];
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+                  Orders marked Completed or Cancelled are removed from this section. Recurring orders stay visible for future dates until each occurrence is completed.
+                </div>
+              </Panel>
+            </div>
+          </div>
         )}
 
         {activePage === "inventory" && (
-          <ProductionInventory
-            inventoryForm={inventoryForm}
-            dispatchInventory={dispatchInventory}
-            editInventoryForm={editInventoryForm}
-            dispatchEditInventory={dispatchEditInventory}
-            adjustInventoryRow={adjustInventoryRow}
-            adjustMode={adjustMode}
-            adjustPods={adjustPods}
-            adjustLbs={adjustLbs}
-            adjustNote={adjustNote}
-            adjustScrapType={adjustScrapType}
-            adjustMessage={adjustMessage}
-            uniqueCrops={uniqueCrops}
-            activeInventory={activeInventory}
-            productionInventory={productionInventory}
-            setAdjustInventoryRow={setAdjustInventoryRow}
-            setAdjustMode={setAdjustMode}
-            setAdjustPods={setAdjustPods}
-            setAdjustLbs={setAdjustLbs}
-            setAdjustNote={setAdjustNote}
-            setAdjustScrapType={setAdjustScrapType}
-            handleSaveInventory={handleSaveInventory}
-            handleSaveInventoryEdits={handleSaveInventoryEdits}
-            clearEditInventoryForm={clearEditInventoryForm}
-            handleInventoryAdjustment={handleInventoryAdjustment}
-            handleProductionStatusChange={handleProductionStatusChange}
-            handleEditInventory={handleEditInventory}
-          />
+          <div style={sectionStackStyle}>
+            <Panel title="Add Production Inventory">
+              <FormGrid columns={3}>
+                <Field label="Tower">
+                  <input value={inventoryTower} onChange={(e) => setInventoryTower(e.target.value)} style={inputStyle} placeholder="R1" />
+                </Field>
+
+                <Field label="Tower Type">
+                  <select value={inventoryTowerType} onChange={(e) => setInventoryTowerType(e.target.value)} style={inputStyle}>
+                    <option value="Low Density">Low Density (44 pods)</option>
+                    <option value="High Density">High Density (160 pods)</option>
+                  </select>
+                </Field>
+
+                <Field label="Max Pods">
+                  <input value={inventoryMaxPods} onChange={(e) => setInventoryMaxPods(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Active Pods">
+                  <input value={inventoryActivePods} onChange={(e) => setInventoryActivePods(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Crop">
+                  <select value={inventoryCrop} onChange={(e) => setInventoryCrop(e.target.value)} style={inputStyle}>
+                    <option value="">Select Crop</option>
+                    {uniqueCrops.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Stage">
+                  <select value={inventoryStage} onChange={(e) => setInventoryStage(e.target.value)} style={inputStyle}>
+                    <option value="Seeded">Seeded</option>
+                    <option value="Transplanted">Transplanted</option>
+                    <option value="Growing">Growing</option>
+                    <option value="Ready">Ready</option>
+                    <option value="Harvested">Harvested</option>
+                    <option value="Scrapped">Scrapped</option>
+                  </select>
+                </Field>
+
+                <Field label="Harvest Type">
+                  <select
+                    value={inventoryHarvestType || (inventoryCrop ? (isRepeatHarvestCrop(inventoryCrop) ? "Trim Harvest" : "Full Harvest") : "Full Harvest")}
+                    onChange={(e) => setInventoryHarvestType(e.target.value)}
+                    style={inputStyle}
+                  >
+                    <option value="Full Harvest">Full Harvest (harvest once)</option>
+                    <option value="Trim Harvest">Trim Harvest (trim up to 5×)</option>
+                  </select>
+                  {inventoryCrop && (
+                    <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>
+                      Default for {inventoryCrop}: {isRepeatHarvestCrop(inventoryCrop) ? "Trim Harvest" : "Full Harvest"}
+                    </span>
+                  )}
+                </Field>
+
+                <Field label="Seeded Date">
+                  <input type="date" value={inventorySeededDate} onChange={(e) => setInventorySeededDate(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Transplant Date">
+                  <input
+                    type="date"
+                    value={inventoryTransplantDate}
+                    onChange={(e) => setInventoryTransplantDate(e.target.value)}
+                    style={inputStyle}
+                  />
+                </Field>
+
+                <Field label="Estimated Ready Date">
+                  <input
+                    type="date"
+                    value={inventoryEstimatedReadyDate}
+                    onChange={(e) => setInventoryEstimatedReadyDate(e.target.value)}
+                    style={inputStyle}
+                  />
+                </Field>
+
+                <Field label="Expected Lbs">
+                  <input value={inventoryExpectedLbs} onChange={(e) => setInventoryExpectedLbs(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Remaining Expected Lbs">
+                  <input value={inventoryRemainingExpectedLbs} onChange={(e) => setInventoryRemainingExpectedLbs(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Status">
+                  <select value={inventoryStatus} onChange={(e) => setInventoryStatus(e.target.value)} style={inputStyle}>
+                    <option value="Active">Active</option>
+                    <option value="Harvested">Harvested</option>
+                    <option value="Lost">Lost</option>
+                    <option value="Scrapped">Scrapped</option>
+                    <option value="Closed">Closed</option>
+                  </select>
+                </Field>
+              </FormGrid>
+
+              <Field label="Notes">
+                <input value={inventoryNotes} onChange={(e) => setInventoryNotes(e.target.value)} style={inputStyle} />
+              </Field>
+
+              <ActionRow message={inventoryMessage}>
+                <button onClick={handleSaveInventory} style={primaryButtonStyle} disabled={inventorySaving}>
+                  {inventorySaving ? "Saving..." : "Save Production Inventory"}
+                </button>
+              </ActionRow>
+            </Panel>
+
+            <div id="edit-production-inventory">
+  <Panel title="Edit Production Inventory">
+              <FormGrid columns={3}>
+                <Field label="Selected Row">
+                  <input value={editingInventoryRowNumber} readOnly style={inputStyle} placeholder="Click Edit on a row below" />
+                </Field>
+
+                <Field label="Tower">
+                  <input value={editInventoryTower} onChange={(e) => setEditInventoryTower(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Tower Type">
+                  <select value={editInventoryTowerType} onChange={(e) => setEditInventoryTowerType(e.target.value)} style={inputStyle}>
+                    <option value="Low Density">Low Density (44 pods)</option>
+                    <option value="High Density">High Density (160 pods)</option>
+                  </select>
+                </Field>
+
+                <Field label="Max Pods">
+                  <input value={editInventoryMaxPods} onChange={(e) => setEditInventoryMaxPods(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Active Pods">
+                  <input value={editInventoryActivePods} onChange={(e) => setEditInventoryActivePods(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Crop">
+                  <select value={editInventoryCrop} onChange={(e) => setEditInventoryCrop(e.target.value)} style={inputStyle}>
+                    <option value="">Select Crop</option>
+                    {uniqueCrops.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Stage">
+                  <select value={editInventoryStage} onChange={(e) => setEditInventoryStage(e.target.value)} style={inputStyle}>
+                    <option value="Seeded">Seeded</option>
+                    <option value="Transplanted">Transplanted</option>
+                    <option value="Growing">Growing</option>
+                    <option value="Ready">Ready</option>
+                    <option value="Harvested">Harvested</option>
+                    <option value="Scrapped">Scrapped</option>
+                  </select>
+                </Field>
+
+                <Field label="Harvest Type">
+                  <select
+                    value={editInventoryHarvestType || (editInventoryCrop ? (isRepeatHarvestCrop(editInventoryCrop) ? "Trim Harvest" : "Full Harvest") : "Full Harvest")}
+                    onChange={(e) => setEditInventoryHarvestType(e.target.value)}
+                    style={inputStyle}
+                  >
+                    <option value="Full Harvest">Full Harvest (harvest once)</option>
+                    <option value="Trim Harvest">Trim Harvest (trim up to 5×)</option>
+                  </select>
+                  {editInventoryCrop && (
+                    <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>
+                      Default for {editInventoryCrop}: {isRepeatHarvestCrop(editInventoryCrop) ? "Trim Harvest" : "Full Harvest"}
+                    </span>
+                  )}
+                </Field>
+
+                <Field label="Seeded Date">
+                  <input type="date" value={editInventorySeededDate} onChange={(e) => setEditInventorySeededDate(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Transplant Date">
+                  <input type="date" value={editInventoryTransplantDate} onChange={(e) => setEditInventoryTransplantDate(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Estimated Ready Date">
+                  <input
+                    type="date"
+                    value={editInventoryEstimatedReadyDate}
+                    onChange={(e) => setEditInventoryEstimatedReadyDate(e.target.value)}
+                    style={inputStyle}
+                  />
+                </Field>
+
+                <Field label="Expected Lbs">
+                  <input value={editInventoryExpectedLbs} onChange={(e) => setEditInventoryExpectedLbs(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Remaining Expected Lbs">
+                  <input
+                    value={editInventoryRemainingExpectedLbs}
+                    onChange={(e) => setEditInventoryRemainingExpectedLbs(e.target.value)}
+                    style={inputStyle}
+                  />
+                </Field>
+
+                <Field label="Status">
+                  <select value={editInventoryStatus} onChange={(e) => setEditInventoryStatus(e.target.value)} style={inputStyle}>
+                    <option value="Active">Active</option>
+                    <option value="Harvested">Harvested</option>
+                    <option value="Lost">Lost</option>
+                    <option value="Scrapped">Scrapped</option>
+                    <option value="Closed">Closed</option>
+                  </select>
+                </Field>
+              </FormGrid>
+
+              <Field label="Notes">
+                <input value={editInventoryNotes} onChange={(e) => setEditInventoryNotes(e.target.value)} style={inputStyle} />
+              </Field>
+
+              <ActionRow message={editInventoryMessage}>
+                <button onClick={handleSaveInventoryEdits} style={primaryButtonStyle} disabled={editInventorySaving}>
+                  {editInventorySaving ? "Saving..." : "Save Changes"}
+                </button>
+                <button onClick={clearEditInventoryForm} style={secondaryButtonStyle}>
+                  Clear
+                </button>
+              </ActionRow>
+            </Panel>
+</div>
+
+            <Panel title="Adjust Inventory After Harvest / Scrapped">
+              <FormGrid columns={3}>
+                <Field label="Inventory Row">
+                  <select value={adjustInventoryRow} onChange={(e) => setAdjustInventoryRow(e.target.value)} style={inputStyle}>
+                    <option value="">Select Tower / Crop</option>
+                    {activeInventory.map((row) => (
+                      <option key={row.rowNumber} value={row.rowNumber}>
+                        {getInventoryTower(row) || "(No Tower)"} | {getInventoryCrop(row)} | Active Pods {getInventoryActivePods(row)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Action">
+                  <select value={adjustMode} onChange={(e) => setAdjustMode(e.target.value as "Harvest" | "Scrapped")} style={inputStyle}>
+                    <option value="Harvest">Harvest</option>
+                    <option value="Scrapped">Scrapped</option>
+                  </select>
+                </Field>
+
+                <Field label="Pods Removed">
+                  <input value={adjustPods} onChange={(e) => setAdjustPods(e.target.value)} style={inputStyle} />
+                </Field>
+
+                <Field label="Lbs Removed (optional)">
+                  <input value={adjustLbs} onChange={(e) => setAdjustLbs(e.target.value)} style={inputStyle} />
+                </Field>
+
+                {adjustMode === "Scrapped" && (
+                  <Field label="Scrap Type">
+                    <input value={adjustScrapType} onChange={(e) => setAdjustScrapType(e.target.value)} style={inputStyle} />
+                  </Field>
+                )}
+              </FormGrid>
+
+              <Field label="Note">
+                <input value={adjustNote} onChange={(e) => setAdjustNote(e.target.value)} style={inputStyle} />
+              </Field>
+
+              <ActionRow message={adjustMessage}>
+                <button onClick={handleInventoryAdjustment} style={primaryButtonStyle}>
+                  Save Inventory Adjustment
+                </button>
+              </ActionRow>
+            </Panel>
+
+            <Panel title="Current Production Inventory">
+              <TableScroll>
+                <table style={tableStyle}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Tower</th>
+                      <th style={thStyle}>Tower Type</th>
+                      <th style={thStyle}>Max Pods</th>
+                      <th style={thStyle}>Active Pods</th>
+                      <th style={thStyle}>Crop</th>
+                      <th style={thStyle}>Stage</th>
+                      <th style={thStyle}>Seeded</th>
+                      <th style={thStyle}>Transplant</th>
+                      <th style={thStyle}>Ready Date</th>
+                      <th style={thStyle}>Expected Lbs</th>
+                      <th style={thStyle}>Remaining Lbs</th>
+                      <th style={thStyle}>Status</th>
+                      <th style={thStyle}>Notes</th>
+                      <th style={thStyle}>Edit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productionInventory.length === 0 ? (
+                      <tr>
+                        <td colSpan={14} style={tdStyle}>
+                          No production inventory found.
+                        </td>
+                      </tr>
+                    ) : (
+                      productionInventory
+                        .slice()
+.sort(sortInventoryByTowerLayout)
+                        .map((item) => (
+                          <tr key={item.rowNumber}>
+                            <td style={tdStyle}>{getInventoryTower(item)}</td>
+                            <td style={tdStyle}>{getInventoryTowerType(item)}</td>
+                            <td style={tdStyle}>{getInventoryMaxPods(item)}</td>
+                            <td style={tdStyle}>{getInventoryActivePods(item)}</td>
+                            <td style={tdStyle}>{getInventoryCrop(item)}</td>
+                            <td style={tdStyle}>{getInventoryStage(item)}</td>
+                            <td style={tdStyle}>{formatDateDisplay(getInventorySeededDate(item))}</td>
+                            <td style={tdStyle}>{formatDateDisplay(getInventoryTransplantDate(item))}</td>
+                            <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
+                            <td style={tdStyle}>{getInventoryExpectedLbs(item)}</td>
+                            <td style={tdStyle}>{getInventoryRemainingExpectedLbs(item)}</td>
+                            <td style={tdStyle}>
+                              <select
+                                value={getInventoryStatus(item) || "Active"}
+                                onChange={(e) => handleProductionStatusChange(item.rowNumber, e.target.value)}
+                                style={compactInputStyle}
+                              >
+                                <option value="Active">Active</option>
+                                <option value="Harvested">Harvested</option>
+                                <option value="Lost">Lost</option>
+                                <option value="Scrapped">Scrapped</option>
+                                <option value="Closed">Closed</option>
+                              </select>
+                            </td>
+                            <td style={tdStyle}>{getInventoryNotes(item)}</td>
+                            <td style={tdStyle}>
+                              <button onClick={() => handleEditInventory(item)} style={primaryButtonStyle}>
+                                Edit
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </TableScroll>
+            </Panel>
+          </div>
         )}
 
-        {activePage === "staffDaily" && (
-          <StaffDaily
-            plantTodayTasks={plantTodayTasks}
-            filteredPlantTodayTasks={filteredPlantTodayTasks}
-            seededInventory={seededInventory}
-            transplantTodayTasks={transplantTodayTasks}
-            readyToHarvestInventory={readyToHarvestInventory}
-            harvestTodayTasks={harvestTodayTasks}
-            packTodayTasks={packTodayTasks}
-            overdueOrders={overdueOrders}
-            filteredRecentActivity={filteredRecentActivity}
-            dashboardStats={dashboardStats}
-            weeklyMetrics={weeklyMetrics}
-            inventoryByCrop={inventoryByCrop}
-            markPlantedLoading={markPlantedLoading}
-            transplantLoading={transplantLoading}
-            harvestLoading={harvestLoading}
-            packLoadingRow={packLoadingRow}
-            harvestForm={harvestForm}
-            dispatchHarvest={dispatchHarvest}
-            transplantRowNumber={transplantRowNumber}
-            transplantTower={transplantTower}
-            transplantTowerType={transplantTowerType}
-            transplantMaxPods={transplantMaxPods}
-            transplantActivePods={transplantActivePods}
-            transplantDate={transplantDate}
-            transplantReadyDate={transplantReadyDate}
-            transplantNotes={transplantNotes}
-            setTransplantRowNumber={setTransplantRowNumber}
-            setTransplantTower={setTransplantTower}
-            setTransplantTowerType={setTransplantTowerType}
-            setTransplantMaxPods={setTransplantMaxPods}
-            setTransplantActivePods={setTransplantActivePods}
-            setTransplantDate={setTransplantDate}
-            setTransplantReadyDate={setTransplantReadyDate}
-            setTransplantNotes={setTransplantNotes}
-            mode={mode}
-            tower={tower}
-            crop={crop}
-            lbs={lbs}
-            podsChanged={podsChanged}
-            entryStatus={entryStatus}
-            stage={stage}
-            entryDate={entryDate}
-            scrapType={scrapType}
-            note={note}
-            quickEntryUnitType={quickEntryUnitType}
-            message={message}
-            setMode={setMode}
-            setTower={setTower}
-            setCrop={setCrop}
-            setLbs={setLbs}
-            setPodsChanged={setPodsChanged}
-            setEntryStatus={setEntryStatus}
-            setStage={setStage}
-            setEntryDate={setEntryDate}
-            setScrapType={setScrapType}
-            setNote={setNote}
-            setQuickEntryUnitType={setQuickEntryUnitType}
-            dailyMessage={dailyMessage}
-            plantingTowerType={plantingTowerType}
-            setPlantingTowerType={setPlantingTowerType}
-            staffLookupCrop={staffLookupCrop}
-            setStaffLookupCrop={setStaffLookupCrop}
-            seedScheduleFilter={seedScheduleFilter}
-            setSeedScheduleFilter={setSeedScheduleFilter}
-            uniqueCrops={uniqueCrops}
-            uniqueTowers={uniqueTowers}
-            handleMarkPlanted={handleMarkPlanted}
-            handleMarkTransplanted={handleMarkTransplanted}
-            handleReadyHarvestSubmit={handleReadyHarvestSubmit}
-            handleMarkPacked={handleMarkPacked}
-            saveQuickAction={saveQuickAction}
-            startReadyHarvestAction={startReadyHarvestAction}
-            clearReadyHarvestAction={clearReadyHarvestAction}
+     {activePage === "staffDaily" && (
+  <div style={sectionStackStyle}>
+    <Panel title="Staff Daily Overview">
+      <MetricGrid>
+        <MiniMetric label="Plant Tasks" value={plantTodayTasks.length} />
+        <MiniMetric label="Seeded Entries" value={seededInventory.length} />
+        <MiniMetric label="Ready to Harvest" value={readyToHarvestInventory.length} />
+        <MiniMetric label="Transplant Tasks" value={transplantTodayTasks.length} />
+        <MiniMetric label="Harvest Tasks" value={harvestTodayTasks.length} />
+        <MiniMetric label="Pack Tasks" value={packTodayTasks.length} />
+        <MiniMetric label="Overdue Orders" value={overdueOrders.length} />
+        <MiniMetric label="Harvested This Week (lbs)" value={weeklyMetrics.harvestedThisWeek} />
+        <MiniMetric label="Scrapped This Week (lbs)" value={weeklyMetrics.scrappedThisWeek} />
+        <MiniMetric label="Pods in Production" value={dashboardStats.podsInProduction} />
+      </MetricGrid>
+      <div style={{ marginTop: 12, fontSize: 14, color: "#334155" }}>{dailyMessage}</div>
+    </Panel>
+
+    <Panel title="Crop Lookup">
+      <FormGrid columns={2}>
+        <Field label="Select Crop">
+          <select value={staffLookupCrop} onChange={(e) => setStaffLookupCrop(e.target.value)} style={inputStyle}>
+            <option value="">Select Crop</option>
+            {uniqueCrops.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+        </Field>
+      </FormGrid>
+      {staffLookupCrop ? (
+        <MetricGrid>
+          <MiniMetric label="Towers in Production" value={inventoryByCrop.get(staffLookupCrop)?.towers || 0} />
+          <MiniMetric label="Pods in Production" value={inventoryByCrop.get(staffLookupCrop)?.availablePlants || 0} />
+          <MiniMetric label="Lbs in Production" value={Math.round((inventoryByCrop.get(staffLookupCrop)?.availableLbs || 0) * 100) / 100} />
+          <MiniMetric label="Ready Now Lbs" value={Math.round((inventoryByCrop.get(staffLookupCrop)?.readyNowLbs || 0) * 100) / 100} />
+          <MiniMetric label="Pipeline Towers" value={inventoryByCrop.get(staffLookupCrop)?.pipelineTowers || 0} />
+          <MiniMetric label="Next Ready Date" value={inventoryByCrop.get(staffLookupCrop)?.nextReadyDate || "-"} />
+        </MetricGrid>
+      ) : (
+        <div style={{ marginTop: 12, fontSize: 14, color: "#475569" }}>Choose a crop to see towers, pods, and pounds in production.</div>
+      )}
+    </Panel>
+
+                  <Panel title="Quick Action / Staff Entry">
+                <FormGrid columns={2}>
+                  <Field label="Mode">
+                    <select value={mode} onChange={(e) => setMode(e.target.value)} style={inputStyle}>
+                      <option value="Harvest">Harvest</option>
+                      <option value="Farmers Market">Farmers Market</option>
+                      <option value="Scrapped">Scrapped</option>
+                      <option value="Seed">Seed</option>
+                      <option value="Transplant">Transplant</option>
+                      <option value="Pack">Pack</option>
+                    </select>
+                  </Field>
+
+                  <Field label="Tower">
+                    <input value={tower} onChange={(e) => setTower(e.target.value)} style={inputStyle} placeholder="R1" />
+                  </Field>
+
+                  <Field label="Crop">
+                    <select value={crop} onChange={(e) => setCrop(e.target.value)} style={inputStyle}>
+                      <option value="">Select Crop</option>
+                      {uniqueCrops.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label={quickEntryUnitType === "Plants" ? "Plants / Pods" : quickEntryUnitType === "Lbs" ? "Lbs" : `Qty (${quickEntryUnitType})`}>
+                    <input value={lbs} onChange={(e) => setLbs(e.target.value)} style={inputStyle} placeholder="12" />
+                  </Field>
+
+                  <Field label="Entry Unit">
+                    <select value={quickEntryUnitType} onChange={(e) => setQuickEntryUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
+                      <option value="Lbs">Lbs</option>
+                      <option value="Plants">Plants</option>
+                      <option value="6oz Bag">6oz Bag</option>
+                      <option value="6oz Clamshell">6oz Clamshell</option>
+                      <option value="0.75oz Small Bag">0.75oz Small Bag</option>
+                    </select>
+                  </Field>
+
+                  <Field label="Pods Changed">
+                    <input value={podsChanged} onChange={(e) => setPodsChanged(e.target.value)} style={inputStyle} placeholder="20" />
+                  </Field>
+
+                  <Field label="Status">
+                    <input value={entryStatus} onChange={(e) => setEntryStatus(e.target.value)} style={inputStyle} placeholder="Completed" />
+                  </Field>
+
+                  <Field label="Stage">
+                    <input value={stage} onChange={(e) => setStage(e.target.value)} style={inputStyle} placeholder="Growing / Ready" />
+                  </Field>
+
+                  <Field label="Date">
+                    <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
+                  </Field>
+
+                  <Field label="Scrap Type">
+                    <input value={scrapType} onChange={(e) => setScrapType(e.target.value)} style={inputStyle} placeholder="Disease / Damage" />
+                  </Field>
+                </FormGrid>
+
+                <Field label="Note">
+                  <textarea value={note} onChange={(e) => setNote(e.target.value)} style={textareaStyle} />
+                </Field>
+
+                <ActionRow message={message}>
+                  <button onClick={saveQuickAction} style={primaryButtonStyle}>
+                    Save to Staff_Actions
+                  </button>
+                </ActionRow>
+              </Panel>
+
+
+    <Panel title="Seed Today / Seeding Schedule">
+      <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 13, color: "#64748b" }}>Default view shows what needs to be seeded today.</div>
+        <select value={seedScheduleFilter} onChange={(e) => setSeedScheduleFilter(e.target.value as "Today" | "This Week" | "This Month")} style={{ ...inputStyle, width: "auto", minWidth: 140, flex: "0 0 auto" }}>
+          <option value="Today">Today</option>
+          <option value="This Week">This Week</option>
+          <option value="This Month">This Month</option>
+        </select>
+      </div>
+      <TableScroll>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Seed By</th>
+              <th style={thStyle}>Status</th>
+              <th style={thStyle}>Crop</th>
+              <th style={thStyle}>Trays Needed</th>
+              <th style={thStyle}>Ready By</th>
+              <th style={thStyle}>Available Lbs</th>
+              <th style={thStyle}>Available Plants</th>
+              <th style={thStyle}>Seeded</th>
+              <th style={thStyle}>Pipeline</th>
+              <th style={thStyle}>Orders</th>
+              <th style={thStyle}>Tray Type</th>
+              <th style={thStyle}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredPlantTodayTasks.length === 0 ? (
+              <tr>
+                <td colSpan={12} style={tdStyle}>
+                  No seeding tasks right now.
+                </td>
+              </tr>
+            ) : (
+              filteredPlantTodayTasks.map((task) => {
+                const displaySeedByDate = task.seedByDate && task.seedByDate < formatDateInput(new Date()) ? formatDateInput(new Date()) : task.seedByDate;
+                return (
+                <tr key={`${task.seedByDate}-${task.crop}`}>
+                  <td style={tdStyle}>{formatDateDisplay(displaySeedByDate)}</td>
+                  <td style={tdStyle}>{task.urgency}</td>
+                  <td style={tdStyle}>{task.crop}</td>
+                  <td style={tdStyle}>
+                    {(() => {
+                      const full = Math.floor(task.totalTowers / 2);
+                      const half = task.totalTowers % 2;
+                      if (full > 0 && half > 0) return `${full} full + 1 half`;
+                      if (full > 0) return `${full} full`;
+                      return `${half} half`;
+                    })()}
+                  </td>
+                  <td style={tdStyle}>{formatDateDisplay(task.earliestDueDate)}</td>
+                  <td style={tdStyle}>{Math.round(task.currentAvailableLbs * 100) / 100}</td>
+                  <td style={tdStyle}>{task.currentAvailablePlants}</td>
+                  <td style={tdStyle}>{task.seededCount}</td>
+                  <td style={tdStyle}>{task.pipelineCount}</td>
+                  <td style={tdStyle}>{task.orders.join(", ")}</td>
+                  <td style={tdStyle}>
+                    <select
+                      value={plantingTrayType[task.crop] || "Full Tray"}
+                      onChange={(e) =>
+                        setPlantingTrayType((prev) => ({
+                          ...prev,
+                          [task.crop]: e.target.value as "Full Tray" | "Half Tray",
+                        }))
+                      }
+                      style={compactInputStyle}
+                    >
+                      <option value="Full Tray">Full Tray (88 seeds)</option>
+                      <option value="Half Tray">Half Tray (44 seeds)</option>
+                    </select>
+                  </td>
+                  <td style={tdStyle}>
+                    <button onClick={() => handleMarkPlanted(task)} style={primaryButtonStyle}>
+                      Mark Planted
+                    </button>
+                  </td>
+                </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </TableScroll>
+    </Panel>
+
+    <Panel title="Seeded Section">
+      <TableScroll>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Tower</th>
+              <th style={thStyle}>Tower Type</th>
+              <th style={thStyle}>Crop</th>
+              <th style={thStyle}>Active Pods</th>
+              <th style={thStyle}>Seeded Date</th>
+              <th style={thStyle}>Ready Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {seededInventory.length === 0 ? (
+              <tr>
+                <td colSpan={6} style={tdStyle}>
+                  No seeded inventory entries yet.
+                </td>
+              </tr>
+            ) : (
+              seededInventory.map((item) => (
+                <tr key={item.rowNumber}>
+                  <td style={tdStyle}>{getInventoryTower(item) || "-"}</td>
+                  <td style={tdStyle}>{getInventoryTowerType(item)}</td>
+                  <td style={tdStyle}>{getInventoryCrop(item)}</td>
+                  <td style={tdStyle}>{getInventoryActivePods(item)}</td>
+                  <td style={tdStyle}>{formatDateDisplay(getInventorySeededDate(item))}</td>
+                  <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </TableScroll>
+    </Panel>
+
+    <Panel title="Transplant Today">
+      <FormGrid columns={3}>
+        <Field label="Seeded Item">
+          <select
+            value={transplantRowNumber}
+            onChange={(e) => setTransplantRowNumber(e.target.value)}
+            style={compactInputStyle}
+          >
+            <option value="">Select seeded item</option>
+            {transplantTodayTasks.map((item) => (
+              <option key={item.rowNumber} value={item.rowNumber}>
+                {getInventoryCrop(item)} - {formatDateDisplay(getInventorySeededDate(item))}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Tower">
+          <input
+            value={transplantTower}
+            onChange={(e) => setTransplantTower(e.target.value)}
+            style={compactInputStyle}
+            placeholder="R1"
           />
-        )}
+        </Field>
+
+        <Field label="Tower Type">
+          <select
+            value={transplantTowerType}
+            onChange={(e) => setTransplantTowerType(e.target.value)}
+            style={compactInputStyle}
+          >
+            <option value="Low Density">Low Density (44)</option>
+            <option value="High Density">High Density (160)</option>
+          </select>
+        </Field>
+
+        <Field label="Max Pods">
+          <input
+            value={transplantMaxPods}
+            onChange={(e) => setTransplantMaxPods(e.target.value)}
+            style={compactInputStyle}
+          />
+        </Field>
+
+        <Field label="Active Pods">
+          <input
+            value={transplantActivePods}
+            onChange={(e) => setTransplantActivePods(e.target.value)}
+            style={compactInputStyle}
+          />
+        </Field>
+
+        <Field label="Transplant Date">
+          <input
+            type="date"
+            value={transplantDate}
+            onChange={(e) => setTransplantDate(e.target.value)}
+            style={compactInputStyle}
+          />
+        </Field>
+
+        <Field label="Estimated Ready Date">
+          <input
+            type="date"
+            value={transplantReadyDate}
+            onChange={(e) => setTransplantReadyDate(e.target.value)}
+            style={compactInputStyle}
+          />
+        </Field>
+      </FormGrid>
+
+      <Field label="Notes">
+        <input
+          value={transplantNotes}
+          onChange={(e) => setTransplantNotes(e.target.value)}
+          style={compactInputStyle}
+        />
+      </Field>
+
+      <ActionRow message={dailyMessage}>
+        <button onClick={handleMarkTransplanted} style={primaryButtonStyle}>
+          Mark Transplanted
+        </button>
+      </ActionRow>
+    </Panel>
+    <Panel title="Ready to Harvest">
+      <div style={{ fontSize: 13, color: "#475569", marginBottom: 10 }}>Only 10 rows show at a time. Scroll to see more. Use Mark Harvested to record a full harvest or a trim harvest.</div>
+      <div style={{ maxHeight: 440, overflowY: "auto", overflowX: "hidden", border: "1px solid #e5e7eb", borderRadius: 10 }}>
+        <TableScroll>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Tower</th>
+                <th style={thStyle}>Crop</th>
+                <th style={thStyle}>Stage</th>
+                <th style={thStyle}>Active Pods</th>
+                <th style={thStyle}>Expected Lbs</th>
+                <th style={thStyle}>Remaining Lbs</th>
+                <th style={thStyle}>Ready Date</th>
+                <th style={thStyle}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {readyToHarvestInventory.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={tdStyle}>
+                    No inventory entries are ready to harvest today.
+                  </td>
+                </tr>
+              ) : (
+                readyToHarvestInventory.map((item) => {
+                  const isActiveRow = String(item.rowNumber) === activeHarvestRowNumber;
+                  return (
+                    <React.Fragment key={item.rowNumber}>
+                      <tr>
+                        <td style={tdStyle}>{getInventoryTower(item) || "-"}</td>
+                        <td style={tdStyle}>{getInventoryCrop(item)}</td>
+                        <td style={tdStyle}>{getInventoryStage(item)}</td>
+                        <td style={tdStyle}>{getInventoryActivePods(item)}</td>
+                        <td style={tdStyle}>{getInventoryExpectedLbs(item)}</td>
+                        <td style={tdStyle}>{getInventoryRemainingExpectedLbs(item)}</td>
+                        <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
+                        <td style={tdStyle}>
+                          <button onClick={() => startReadyHarvestAction(item)} style={primaryButtonStyle}>
+                            Mark Harvested
+                          </button>
+                        </td>
+                      </tr>
+                      {isActiveRow ? (
+                        <tr>
+                          <td colSpan={8} style={{ ...tdStyle, background: "#f8fafc" }}>
+                            <FormGrid columns={3}>
+                              <Field label="Harvest Type">
+                                <select value={harvestActionType} onChange={(e) => setHarvestActionType(e.target.value as "Full Harvest" | "Trim Harvest")} style={compactInputStyle}>
+                                  <option value="Full Harvest">Full Harvest</option>
+                                  <option value="Trim Harvest">Trim Harvest</option>
+                                </select>
+                              </Field>
+                              <Field label={harvestActionType === "Trim Harvest" ? "Pods Trimmed" : "Pods Harvested"}>
+                                <input value={harvestPodsValue} onChange={(e) => setHarvestPodsValue(e.target.value)} style={compactInputStyle} />
+                              </Field>
+                              <Field label="Output Unit">
+                                <select value={harvestOutputUnit} onChange={(e) => setHarvestOutputUnit(e.target.value as OrderUnitType)} style={compactInputStyle}>
+                                  <option value="Lbs">Lbs</option>
+                                  <option value="6oz Bag">6oz Bag</option>
+                                  <option value="6oz Clamshell">6oz Clamshell</option>
+                      <option value="0.75oz Small Bag">0.75oz Small Bag</option>
+                                </select>
+                              </Field>
+                              <Field label="Harvested Qty">
+                                <input value={harvestOutputQty} onChange={(e) => setHarvestOutputQty(e.target.value)} style={compactInputStyle} />
+                              </Field>
+                              <Field label="Harvested Lbs">
+                                <input value={String(quantityToLbs(harvestOutputUnit, toNumber(harvestOutputQty)))} readOnly style={{ ...compactInputStyle, background: "#f1f5f9" }} />
+                              </Field>
+                            </FormGrid>
+                            <Field label="Notes">
+                              <input value={harvestNote} onChange={(e) => setHarvestNote(e.target.value)} style={compactInputStyle} />
+                            </Field>
+                            <ActionRow message={dailyMessage}>
+                              <button onClick={handleReadyHarvestSubmit} style={primaryButtonStyle}>Save Harvest</button>
+                              <button onClick={clearReadyHarvestAction} style={secondaryButtonStyle}>Cancel</button>
+                            </ActionRow>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </TableScroll>
+      </div>
+    </Panel>
+
+
+    <Panel title="Pack Today">
+      <TableScroll>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Customer</th>
+              <th style={thStyle}>Crop</th>
+              <th style={thStyle}>Unit</th>
+              <th style={thStyle}>Qty to Pack</th>
+              <th style={thStyle}>Due Date</th>
+              <th style={thStyle}>Status</th>
+              <th style={thStyle}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {packTodayTasks.length === 0 ? (
+              <tr>
+                <td colSpan={7} style={tdStyle}>
+                  No packing tasks due today.
+                </td>
+              </tr>
+            ) : (
+              packTodayTasks.map((task) => (
+                <tr key={task.rowNumber}>
+                  <td style={tdStyle}>{task.customer}</td>
+                  <td style={tdStyle}>{task.crop}</td>
+                  <td style={tdStyle}>{task.unitType}</td>
+                  <td style={tdStyle}>{task.quantityNeeded}</td>
+                  <td style={tdStyle}>{formatDateDisplay(task.dueDate)}</td>
+                  <td style={tdStyle}>{task.status}</td>
+                  <td style={tdStyle}>
+                    <button onClick={() => handleMarkPacked(task)} style={primaryButtonStyle}>
+                      Mark Packed
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </TableScroll>
+    </Panel>
+
+    <Panel title="Overdue / Due Soon">
+      <TableScroll>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Customer</th>
+              <th style={thStyle}>Crop</th>
+              <th style={thStyle}>Due Date</th>
+              <th style={thStyle}>Status</th>
+              <th style={thStyle}>New Towers</th>
+            </tr>
+          </thead>
+          <tbody>
+            {overdueOrders.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={tdStyle}>
+                  No overdue orders.
+                </td>
+              </tr>
+            ) : (
+              overdueOrders.map((order) => (
+                <tr key={order.rowNumber}>
+                  <td style={tdStyle}>{getOrderCustomer(order)}</td>
+                  <td style={tdStyle}>{getOrderCrop(order)}</td>
+                  <td style={tdStyle}>{formatDateDisplay(getOrderRequestedDeliveryDate(order))}</td>
+                  <td style={tdStyle}>{getOrderStatus(order)}</td>
+                  <td style={tdStyle}>{getOrderNewTowersToPlant(order)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </TableScroll>
+    </Panel>
+
+    <Panel title="Recent Activity">
+      <div style={{ maxHeight: 290, overflowY: "auto", overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Timestamp</th>
+              <th style={thStyle}>Mode</th>
+              <th style={thStyle}>Tower</th>
+              <th style={thStyle}>Crop</th>
+              <th style={thStyle}>Lbs</th>
+              <th style={thStyle}>Pods Changed</th>
+              <th style={thStyle}>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRecentActivity.length === 0 ? (
+              <tr>
+                <td colSpan={7} style={tdStyle}>
+                  No recent activity found.
+                </td>
+              </tr>
+            ) : (
+              filteredRecentActivity.map((row) => (
+                <tr key={row.rowNumber}>
+                  <td style={tdStyle}>{formatDateTimeDisplay(getStaffTimestamp(row))}</td>
+                  <td style={tdStyle}>{getStaffMode(row)}</td>
+                  <td style={tdStyle}>{getStaffTower(row)}</td>
+                  <td style={tdStyle}>{getStaffCrop(row)}</td>
+                  <td style={tdStyle}>{getStaffLbs(row)}</td>
+                  <td style={tdStyle}>{getStaffPodsChanged(row)}</td>
+                  <td style={tdStyle}>{formatDateDisplay(getStaffDate(row))}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+        Showing 5 visible rows. Scroll to see the rest.
+      </div>
+    </Panel>
+  </div>
+)}
       </div>
     </div>
   );
 }
 
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section style={panelStyle}>
+      <h2 style={{ marginTop: 0, marginBottom: 16, fontSize: "clamp(18px, 3vw, 22px)", lineHeight: 1.2 }}>{title}</h2>
+      {children}
+    </section>
+  );
+}
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: "block", minWidth: 0 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{label}</div>
+      {children}
+    </label>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div style={statCardStyle}>
+      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: "clamp(24px, 4vw, 30px)", fontWeight: 700 }}>{value}</div>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div style={miniMetricStyle}>
+      <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, wordBreak: "break-word" }}>{value}</div>
+    </div>
+  );
+}
+
+function TableScroll({ children }: { children: React.ReactNode }) {
+  return <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>{children}</div>;
+}
+
+function ActionRow({ children, message }: { children: React.ReactNode; message: string }) {
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 12,
+        alignItems: "center",
+      }}
+    >
+      {children}
+      <span style={{ fontSize: 14, color: "#334155", wordBreak: "break-word" }}>{message}</span>
+    </div>
+  );
+}
+
+function ResponsiveStatGrid({ children }: { children: React.ReactNode }) {
+  return <div style={responsiveStatGridStyle}>{children}</div>;
+}
+
+function ResponsiveTwoPanelGrid({ children }: { children: React.ReactNode }) {
+  return <div style={responsiveTwoPanelGridStyle}>{children}</div>;
+}
+
+function FormGrid({ children, columns = 2 }: { children: React.ReactNode; columns?: 1 | 2 | 3 }) {
+  const minWidth = columns === 3 ? 180 : columns === 2 ? 220 : 320;
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(auto-fit, minmax(${minWidth}px, 1fr))`,
+        gap: 12,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function MetricGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+        gap: 12,
+        marginTop: 12,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+const pageStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  background: "#e5e7eb",
+  color: "#1f2937",
+  fontFamily: "Arial, sans-serif",
+};
+
+const containerStyle: React.CSSProperties = {
+  maxWidth: 1440,
+  margin: "0 auto",
+  padding: 16,
+};
+
+const headerStyle: React.CSSProperties = {
+  background: "#0f172a",
+  color: "white",
+  padding: 18,
+  borderRadius: 14,
+  marginBottom: 18,
+};
+
+const navWrapStyle: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 12,
+  alignItems: "center",
+  justifyContent: "space-between",
+  marginBottom: 18,
+};
+
+const navButtonsStyle: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 10,
+};
+
+const navButtonStyle: React.CSSProperties = {
+  padding: "12px 16px",
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  background: "#e5e7eb",
+  color: "#111827",
+  cursor: "pointer",
+  minHeight: 44,
+  fontSize: 14,
+};
+
+const navButtonActiveStyle: React.CSSProperties = {
+  ...navButtonStyle,
+  background: "#1d4ed8",
+  color: "white",
+  border: "1px solid #1d4ed8",
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  padding: "12px 16px",
+  borderRadius: 10,
+  border: "none",
+  background: "#1d4ed8",
+  color: "white",
+  cursor: "pointer",
+  minHeight: 44,
+  fontSize: 14,
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  padding: "12px 16px",
+  borderRadius: 10,
+  border: "1px solid #cbd5e1",
+  background: "white",
+  color: "#111827",
+  cursor: "pointer",
+  minHeight: 44,
+  fontSize: 14,
+};
+
+const sectionStackStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 18,
+};
+
+const responsiveStatGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+  gap: 14,
+};
+
+const responsiveTwoPanelGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  gap: 18,
+};
+
+const panelStyle: React.CSSProperties = {
+  background: "#f8fafc",
+  borderRadius: 14,
+  padding: 16,
+  boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+  minWidth: 0,
+};
+
+const statCardStyle: React.CSSProperties = {
+  background: "white",
+  borderRadius: 12,
+  padding: 16,
+  boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+};
+
+const miniMetricStyle: React.CSSProperties = {
+  background: "white",
+  border: "1px solid #cbd5e1",
+  borderRadius: 10,
+  padding: 12,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "12px 12px",
+  borderRadius: 10,
+  border: "1px solid #94a3b8",
+  background: "white",
+  boxSizing: "border-box",
+  fontSize: 16,
+  minHeight: 44,
+};
+
+const compactInputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "10px 10px",
+  borderRadius: 8,
+  border: "1px solid #94a3b8",
+  background: "white",
+  boxSizing: "border-box",
+  fontSize: 14,
+  minHeight: 40,
+};
+
+const textareaStyle: React.CSSProperties = {
+  ...inputStyle,
+  minHeight: 88,
+  resize: "vertical",
+};
+
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  minWidth: 680,
+  borderCollapse: "separate",
+  borderSpacing: 0,
+  background: "white",
+  border: "1px solid #cbd5e1",
+  borderRadius: 10,
+  overflow: "hidden",
+};
+
+const thStyle: React.CSSProperties = {
+  textAlign: "left",
+  padding: "12px 10px",
+  borderBottom: "1px solid #cbd5e1",
+  background: "#e2e8f0",
+  position: "sticky",
+  top: 0,
+  fontSize: 14,
+  whiteSpace: "nowrap",
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: "12px 10px",
+  borderBottom: "1px solid #e5e7eb",
+  verticalAlign: "top",
+  background: "white",
+  fontSize: 14,
+};
