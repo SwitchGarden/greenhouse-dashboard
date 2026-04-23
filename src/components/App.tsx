@@ -886,6 +886,7 @@ export default function App() {
         towers: number;
         availableLbs: number;
         availablePlants: number;
+        podsInTowers: number;
         pipelineTowers: number;
         nextReadyDate: string;
         readyNowLbs: number;
@@ -904,6 +905,7 @@ export default function App() {
         towers: 0,
         availableLbs: 0,
         availablePlants: 0,
+        podsInTowers: 0,
         pipelineTowers: 0,
         nextReadyDate: "",
         readyNowLbs: 0,
@@ -921,6 +923,7 @@ export default function App() {
       current.towers += 1;
       current.availableLbs += remainingLbs;
       current.availablePlants += activePods;
+      if (itemStage !== "seeded") current.podsInTowers += activePods;
 
       if (
         itemStatus === "active" ||
@@ -1664,7 +1667,9 @@ const overdueOrders = useMemo(() => {
     const totalQtyOnOrder = activeOrders.reduce((sum, row) => sum + toNumber(getOrderQuantityNeeded(row)), 0);
     const totalNewTowersNeeded = activeOrders.reduce((sum, row) => sum + toNumber(getOrderNewTowersToPlant(row)), 0);
     const readyInventory = activeInventory.filter((item) => normalizeStatus(getInventoryStage(item)) === "ready").length;
-    const podsInProduction = activeInventory.reduce((sum, row) => sum + toNumber(getInventoryActivePods(row)), 0);
+    const podsInProduction = activeInventory
+      .filter((row) => normalizeStatus(getInventoryStage(row)) !== "seeded")
+      .reduce((sum, row) => sum + toNumber(getInventoryActivePods(row)), 0);
 
     return {
       totalQtyOnOrder,
@@ -4073,7 +4078,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       {staffLookupCrop ? (
         <MetricGrid>
           <MiniMetric label="Towers in Production" value={inventoryByCrop.get(staffLookupCrop)?.towers || 0} />
-          <MiniMetric label="Pods in Production" value={inventoryByCrop.get(staffLookupCrop)?.availablePlants || 0} />
+          <MiniMetric label="Pods in Production" value={inventoryByCrop.get(staffLookupCrop)?.podsInTowers || 0} />
           <MiniMetric label="Lbs in Production" value={Math.round((inventoryByCrop.get(staffLookupCrop)?.availableLbs || 0) * 100) / 100} />
           <MiniMetric label="Ready Now Lbs" value={Math.round((inventoryByCrop.get(staffLookupCrop)?.readyNowLbs || 0) * 100) / 100} />
           <MiniMetric label="Pipeline Towers" value={inventoryByCrop.get(staffLookupCrop)?.pipelineTowers || 0} />
