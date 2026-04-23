@@ -4227,6 +4227,20 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           </button>
         </div>
       </div>
+      {(() => {
+        const todayDow = new Date().getDay(); // 0=Sun, 3=Wed
+        const daysUntilWed = (3 - todayDow + 7) % 7 || 7;
+        const nextWed = addDays(formatDateInput(new Date()), daysUntilWed);
+        if (seedScheduleFilter === "Today" && todayDow !== 3) {
+          return (
+            <div style={{ padding: "16px 0", color: "#64748b", fontSize: 14 }}>
+              Seeding day is <strong>Wednesday</strong>. Next seeding: <strong>{formatDateDisplay(nextWed)}</strong>.
+              Switch the filter to <em>This Week</em> or wider to preview upcoming tasks.
+            </div>
+          );
+        }
+        return null;
+      })()}
       <TableScroll>
         <table style={tableStyle}>
           <thead>
@@ -4248,14 +4262,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             </tr>
           </thead>
           <tbody>
-            {filteredPlantTodayTasks.filter((t) => !dismissedSeedTasks.has(`${t.seedByDate}__${t.crop}`)).length === 0 ? (
-              <tr>
-                <td colSpan={14} style={tdStyle}>
-                  No seeding tasks right now.
-                </td>
-              </tr>
-            ) : (
-              filteredPlantTodayTasks.filter((t) => !dismissedSeedTasks.has(`${t.seedByDate}__${t.crop}`)).map((task) => {
+            {(() => {
+              const isWednesdayOnly = seedScheduleFilter === "Today" && new Date().getDay() !== 3;
+              const visibleTasks = filteredPlantTodayTasks.filter((t) => !dismissedSeedTasks.has(`${t.seedByDate}__${t.crop}`));
+              if (isWednesdayOnly) return <tr><td colSpan={14} style={tdStyle}></td></tr>;
+              if (visibleTasks.length === 0) return <tr><td colSpan={14} style={tdStyle}>No seeding tasks right now.</td></tr>;
+              return visibleTasks.map((task) => {
                 const displaySeedByDate = task.seedByDate && task.seedByDate < formatDateInput(new Date()) ? formatDateInput(new Date()) : task.seedByDate;
                 return (
                 <tr key={`${task.seedByDate}-${task.crop}`}>
@@ -4319,8 +4331,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   </td>
                 </tr>
                 );
-              })
-            )}
+              });
+            })()}
           </tbody>
         </table>
       </TableScroll>
