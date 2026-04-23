@@ -736,6 +736,13 @@ export default function App() {
   const [staffLookupCrop, setStaffLookupCrop] = useState("");
   const [quickEntryUnitType, setQuickEntryUnitType] = useState<OrderUnitType>("Lbs");
   const [seedScheduleFilter, setSeedScheduleFilter] = useState<"Today" | "This Week" | "This Month" | "3 Months">("Today");
+  const [dismissedSeedTasks, setDismissedSeedTasks] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem("dismissedSeedTasks");
+      if (saved) return new Set<string>(JSON.parse(saved));
+    } catch { /* ignore */ }
+    return new Set<string>();
+  });
   const [seededEditRowNumber, setSeededEditRowNumber] = useState<number | null>(null);
   const [seededEditTower, setSeededEditTower] = useState("");
   const [seededEditSeededDate, setSeededEditSeededDate] = useState("");
@@ -2664,6 +2671,16 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     }
   };
 
+  const dismissSeedTask = (seedByDate: string, crop: string) => {
+    const key = `${seedByDate}__${crop}`;
+    setDismissedSeedTasks((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      try { localStorage.setItem("dismissedSeedTasks", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
   const handleDeleteSeededEntry = async (rowNumber: number) => {
     try {
       const result = await postToBackend({
@@ -4227,17 +4244,18 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <th style={thStyle}>Tray Type</th>
               <th style={thStyle}>Seeded Date</th>
               <th style={thStyle}>Action</th>
+              <th style={thStyle}></th>
             </tr>
           </thead>
           <tbody>
-            {filteredPlantTodayTasks.length === 0 ? (
+            {filteredPlantTodayTasks.filter((t) => !dismissedSeedTasks.has(`${t.seedByDate}__${t.crop}`)).length === 0 ? (
               <tr>
-                <td colSpan={13} style={tdStyle}>
+                <td colSpan={14} style={tdStyle}>
                   No seeding tasks right now.
                 </td>
               </tr>
             ) : (
-              filteredPlantTodayTasks.map((task) => {
+              filteredPlantTodayTasks.filter((t) => !dismissedSeedTasks.has(`${t.seedByDate}__${t.crop}`)).map((task) => {
                 const displaySeedByDate = task.seedByDate && task.seedByDate < formatDateInput(new Date()) ? formatDateInput(new Date()) : task.seedByDate;
                 return (
                 <tr key={`${task.seedByDate}-${task.crop}`}>
@@ -4288,6 +4306,15 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   <td style={tdStyle}>
                     <button onClick={() => handleMarkPlanted(task)} style={primaryButtonStyle}>
                       Mark Planted
+                    </button>
+                  </td>
+                  <td style={tdStyle}>
+                    <button
+                      onClick={() => dismissSeedTask(task.seedByDate, task.crop)}
+                      style={{ ...secondaryButtonStyle, color: "#dc2626", borderColor: "#fca5a5" }}
+                      title="Dismiss this task"
+                    >
+                      ✕
                     </button>
                   </td>
                 </tr>
