@@ -629,6 +629,11 @@ const plantTodayTasks = useMemo(() => {
     const dueDate = getOrderRequestedDeliveryDate(order);
     if (!dueDate) continue;
 
+    // Skip past-due orders — they have either been delivered (mark them complete)
+    // or are genuinely overdue (shown in the Overdue section). Either way they
+    // should not drain the inventory pool used for future seeding planning.
+    if (dueDate < today) continue;
+
     const unitType = getOrderUnitType(order);
     const qtyNeeded = toNumber(getOrderQuantityNeeded(order));
     const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
