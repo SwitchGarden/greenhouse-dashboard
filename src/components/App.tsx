@@ -101,6 +101,8 @@ type ProductionInventoryRow = {
   remainingExpectedLbs?: number | string;
   status?: string;
   notes?: string;
+  harvestType?: string;
+  "Harvest Type"?: string;
 };
 
 type OrderUnitType = "Lbs" | "Plants" | "6oz Bag" | "6oz Clamshell" | "0.75oz Small Bag";
@@ -128,7 +130,11 @@ const API_URL = import.meta.env.VITE_API_BASE_URL;
 
 const SIX_OZ_IN_LBS = 6 / 16;
 const SMALL_BAG_OZ_IN_LBS = 0.75 / 16;
-const REPEAT_HARVEST_CROPS = new Set(["brassica"]);
+const MAX_TRIMS = 5;
+const TRIM_REGROWTH_DAYS = 21;
+const REPEAT_HARVEST_CROPS = new Set([
+  "arugula", "basil", "thai_basil", "mint", "chives", "kale", "parsley", "brassica"
+]);
 
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -486,6 +492,17 @@ const getInventoryRemainingExpectedLbs = (row: ProductionInventoryRow) => {
 
 const getInventoryStatus = (row: ProductionInventoryRow) => row.status || row.Status || "";
 const getInventoryNotes = (row: ProductionInventoryRow) => row.notes || row.Notes || "";
+const getInventoryTrimCount = (row: ProductionInventoryRow): number | string =>
+  (row as any).trimCount ?? (row as any)["Trim Count"] ?? 0;
+
+const getInventoryHarvestType = (row: ProductionInventoryRow): string =>
+  row.harvestType || row["Harvest Type"] || "";
+
+const getEffectiveHarvestType = (row: ProductionInventoryRow): "Full Harvest" | "Trim Harvest" => {
+  const stored = getInventoryHarvestType(row);
+  if (stored === "Full Harvest" || stored === "Trim Harvest") return stored;
+  return isRepeatHarvestCrop(getInventoryCrop(row)) ? "Trim Harvest" : "Full Harvest";
+};
 
 export default function App() {
   const [activePage, setActivePage] = useState<PageKey>("dashboard");
@@ -546,6 +563,7 @@ export default function App() {
   const [inventorySeededDate, setInventorySeededDate] = useState("");
   const [inventoryTransplantDate, setInventoryTransplantDate] = useState("");
   const [inventoryEstimatedReadyDate, setInventoryEstimatedReadyDate] = useState("");
+  const [inventoryHarvestType, setInventoryHarvestType] = useState("");
   const [inventoryExpectedLbs, setInventoryExpectedLbs] = useState("");
   const [inventoryRemainingExpectedLbs, setInventoryRemainingExpectedLbs] = useState("");
   const [inventoryStatus, setInventoryStatus] = useState("Active");
@@ -573,6 +591,7 @@ export default function App() {
   const [editInventorySeededDate, setEditInventorySeededDate] = useState("");
   const [editInventoryTransplantDate, setEditInventoryTransplantDate] = useState("");
   const [editInventoryEstimatedReadyDate, setEditInventoryEstimatedReadyDate] = useState("");
+  const [editInventoryHarvestType, setEditInventoryHarvestType] = useState("");
   const [editInventoryExpectedLbs, setEditInventoryExpectedLbs] = useState("");
   const [editInventoryRemainingExpectedLbs, setEditInventoryRemainingExpectedLbs] = useState("");
   const [editInventoryStatus, setEditInventoryStatus] = useState("Active");
@@ -750,11 +769,35 @@ export default function App() {
         current.pipelineTowers += 1;
       }
 
+      const harvestType = getEffectiveHarvestType(item);
+      const isTrimHarvest = harvestType === "Trim Harvest";
+      const trimCount = toNumber(getInventoryTrimCount(item));
+      const remainingTrimCycles = Math.max(0, MAX_TRIMS - trimCount - 1);
+      const lbsPerCycle = toNumber(getInventoryExpectedLbs(item)) || remainingLbs;
+
       if (readyNow) {
         current.readyNowLbs += remainingLbs;
         current.readyNowPlants += activePods;
+        if (isTrimHarvest && remainingTrimCycles > 0) {
+          for (let i = 1; i <= remainingTrimCycles; i++) {
+            current.futureEntries.push({
+              readyDate: addDays(today, i * TRIM_REGROWTH_DAYS),
+              lbs: lbsPerCycle,
+              plants: activePods,
+            });
+          }
+        }
       } else if (readyDate) {
         current.futureEntries.push({ readyDate, lbs: remainingLbs, plants: activePods });
+        if (isTrimHarvest && remainingTrimCycles > 0) {
+          for (let i = 1; i <= remainingTrimCycles; i++) {
+            current.futureEntries.push({
+              readyDate: addDays(readyDate, i * TRIM_REGROWTH_DAYS),
+              lbs: lbsPerCycle,
+              plants: activePods,
+            });
+          }
+        }
       }
 
       if (readyDate) {
@@ -1905,6 +1948,7 @@ const overdueOrders = useMemo(() => {
         remainingExpectedLbs,
         status: inventoryStatus,
         notes: inventoryNotes,
+        harvestType: inventoryHarvestType,
       });
 
       if (result.ok) {
@@ -1922,6 +1966,7 @@ const overdueOrders = useMemo(() => {
         setInventoryRemainingExpectedLbs("");
         setInventoryStatus("Active");
         setInventoryNotes("");
+        setInventoryHarvestType("");
         await loadProductionInventory();
       } else {
         setInventoryMessage(result.message || "Unable to save production inventory.");
@@ -1984,7 +2029,7 @@ const overdueOrders = useMemo(() => {
     const newActivePods = Math.max(0, currentActivePods - podsToRemove);
     const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - lbsRemoved) * 100) / 100);
 
-    const keepRowActiveForRepeatHarvest = adjustMode === "Harvest" && isRepeatHarvestCrop(cropName) && podsToRemove === 0;
+    const keepRowActiveForRepeatHarvest = adjustMode === "Harvest" && getEffectiveHarvestType(selected) === "Trim Harvest" && podsToRemove === 0;
     const newStatus = keepRowActiveForRepeatHarvest ? (getInventoryStatus(selected) || "Active") : (newActivePods === 0 ? (adjustMode === "Harvest" ? "Harvested" : "Scrapped") : getInventoryStatus(selected) || "Active");
     const newStage = keepRowActiveForRepeatHarvest ? (getInventoryStage(selected) || "Growing") : (newActivePods === 0 ? (adjustMode === "Harvest" ? "Harvested" : "Scrapped") : getInventoryStage(selected) || "Growing");
     const updatedNotes = `${getInventoryNotes(selected) || ""} ${adjustMode} ${podsToRemove} pods / ${lbsRemoved} lbs on ${formatDateInput(
@@ -2060,6 +2105,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   setEditInventorySeededDate(formatDateInput(getInventorySeededDate(item)));
   setEditInventoryTransplantDate(formatDateInput(getInventoryTransplantDate(item)));
   setEditInventoryEstimatedReadyDate(formatDateInput(getInventoryEffectiveReadyDate(item)));
+  setEditInventoryHarvestType(getInventoryHarvestType(item));
   setEditInventoryExpectedLbs(String(getInventoryExpectedLbs(item)));
   setEditInventoryRemainingExpectedLbs(String(getInventoryRemainingExpectedLbs(item)));
   setEditInventoryStatus(getInventoryStatus(item) || "Active");
@@ -2115,6 +2161,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         remainingExpectedLbs: toNumber(editInventoryRemainingExpectedLbs),
         status: editInventoryStatus,
         notes: editInventoryNotes,
+        harvestType: editInventoryHarvestType,
       });
 
       if (result.ok) {
@@ -2146,6 +2193,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     setEditInventoryRemainingExpectedLbs("");
     setEditInventoryStatus("Active");
     setEditInventoryNotes("");
+    setEditInventoryHarvestType("");
     setEditInventoryMessage("");
   };
 
@@ -2392,7 +2440,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   const startReadyHarvestAction = (item: ProductionInventoryRow) => {
     const rowId = String(item.rowNumber);
     setActiveHarvestRowNumber(rowId);
-    setHarvestActionType(isRepeatHarvestCrop(getInventoryCrop(item)) ? "Trim Harvest" : "Full Harvest");
+    setHarvestActionType(getEffectiveHarvestType(item));
     setHarvestPodsValue(String(getInventoryActivePods(item) || ""));
     setHarvestOutputUnit("Lbs");
     setHarvestOutputQty(String(getInventoryRemainingExpectedLbs(item) || ""));
@@ -3141,6 +3189,22 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     <option value="Harvested">Harvested</option>
                     <option value="Scrapped">Scrapped</option>
                   </select>
+                </Field>
+
+                <Field label="Harvest Type">
+                  <select
+                    value={inventoryHarvestType || (inventoryCrop ? (isRepeatHarvestCrop(inventoryCrop) ? "Trim Harvest" : "Full Harvest") : "Full Harvest")}
+                    onChange={(e) => setInventoryHarvestType(e.target.value)}
+                    style={inputStyle}
+                  >
+                    <option value="Full Harvest">Full Harvest (harvest once)</option>
+                    <option value="Trim Harvest">Trim Harvest (trim up to 5×)</option>
+                  </select>
+                  {inventoryCrop && (
+                    <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>
+                      Default for {inventoryCrop}: {isRepeatHarvestCrop(inventoryCrop) ? "Trim Harvest" : "Full Harvest"}
+                    </span>
+                  )}
                 </Field>
 
                 <Field label="Seeded Date">
