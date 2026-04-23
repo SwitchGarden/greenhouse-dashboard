@@ -350,7 +350,12 @@ const formatDateInput = (value: string | Date | null | undefined) => {
 
 const formatDateDisplay = (value: string | Date | null | undefined) => {
   if (!value) return "";
-  const date = new Date(value);
+  // Date-only strings (YYYY-MM-DD) must be parsed as local midnight, not UTC midnight,
+  // otherwise US timezones shift the date back by one day when displaying.
+  const normalized = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? value + "T00:00:00"
+    : value;
+  const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleDateString();
 };
