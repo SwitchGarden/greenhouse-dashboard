@@ -259,7 +259,19 @@ export function Dashboard({
                 ) : (
                   executiveAlerts.map((alert, index) => (
                     <tr key={`${alert.title}-${index}`}>
-                      <td style={tdStyle}>{alert.level}</td>
+                      <td style={tdStyle}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{
+                            display: "inline-block",
+                            width: 10,
+                            height: 10,
+                            borderRadius: "50%",
+                            background: alert.level === "High" ? "#ef4444" : "#eab308",
+                            flexShrink: 0,
+                          }} />
+                          {alert.level}
+                        </div>
+                      </td>
                       <td style={tdStyle}>{alert.title}</td>
                       <td style={tdStyle}>{alert.detail}</td>
                     </tr>
