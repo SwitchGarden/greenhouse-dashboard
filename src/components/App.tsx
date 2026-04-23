@@ -2644,12 +2644,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             flexWrap: "wrap",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 18, minWidth: 0, flex: "1 1 420px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 18, minWidth: 0, flex: "1 1 200px" }}>
             <img
               src="/gardennobkgd.png"
               alt="Switchpoint Garden"
               style={{
-                height: 112,
+                height: "clamp(64px, 14vw, 112px)",
                 width: "auto",
                 display: "block",
                 maxWidth: "100%",
@@ -3619,7 +3619,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     <Panel title="Seed Today / Seeding Schedule">
       <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: "#64748b" }}>Default view shows what needs to be seeded today.</div>
-        <select value={seedScheduleFilter} onChange={(e) => setSeedScheduleFilter(e.target.value as "Today" | "This Week" | "This Month")} style={{ ...inputStyle, width: 180 }}>
+        <select value={seedScheduleFilter} onChange={(e) => setSeedScheduleFilter(e.target.value as "Today" | "This Week" | "This Month")} style={{ ...inputStyle, width: "auto", minWidth: 140, flex: "0 0 auto" }}>
           <option value="Today">Today</option>
           <option value="This Week">This Week</option>
           <option value="This Month">This Month</option>
@@ -4220,7 +4220,7 @@ const responsiveStatGridStyle: React.CSSProperties = {
 
 const responsiveTwoPanelGridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
   gap: 18,
 };
 
