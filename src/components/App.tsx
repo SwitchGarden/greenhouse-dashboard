@@ -1126,7 +1126,7 @@ const plantTodayTasks = useMemo(() => {
   const today = formatDateInput(new Date());
 
   // Expand orders: salad mix orders become per-component crop demands
-  type OrderDemand = { cropKey: string; cropName: string; dueDate: string; qtyInLbs: number; customer: string };
+  type OrderDemand = { cropKey: string; cropName: string; dueDate: string; qtyInLbs: number; qtyInPlants: number; customer: string };
   const demands: OrderDemand[] = [];
   for (const order of openOrders) {
     const rawCrop = (getOrderCrop(order) || "").trim();
@@ -1136,12 +1136,9 @@ const plantTodayTasks = useMemo(() => {
     if (!dueDate) continue;
     const unitType = getOrderUnitType(order);
     const qtyNeeded = toNumber(getOrderQuantityNeeded(order));
-    let totalLbs = quantityToLbs(unitType, qtyNeeded);
-    // Plants orders: convert plant count to equivalent lbs using crop yield
-    if (unitType === "Plants" && qtyNeeded > 0) {
-      const profile = getCropProfile(cropKey);
-      totalLbs = Math.round(qtyNeeded * (profile.expectedLbsPerTower / HALF_TRAY_SEEDS) * 1000) / 1000;
-    }
+    // Plants unit: track as plants (not lbs) so inventory pods are compared directly
+    const qtyInPlants = unitType === "Plants" ? qtyNeeded : 0;
+    const totalLbs = unitType === "Plants" ? 0 : quantityToLbs(unitType, qtyNeeded);
     const recipe = SALAD_MIX_RECIPES[cropKey];
     if (recipe && totalLbs > 0) {
       const totalRecipeOz = recipe.reduce((s, c) => s + c.oz, 0);
@@ -1151,16 +1148,17 @@ const plantTodayTasks = useMemo(() => {
           cropName: formatCropLabel(compCrop),
           dueDate,
           qtyInLbs: Math.round(totalLbs * (oz / totalRecipeOz) * 1000) / 1000,
+          qtyInPlants: 0,
           customer: `${getOrderCustomer(order)} (${formatCropLabel(cropKey)})`,
         });
       }
     } else if (!recipe) {
-      demands.push({ cropKey, cropName: rawCrop, dueDate, qtyInLbs: totalLbs, customer: getOrderCustomer(order) });
+      demands.push({ cropKey, cropName: rawCrop, dueDate, qtyInLbs: totalLbs, qtyInPlants, customer: getOrderCustomer(order) });
     }
   }
-  // Standing orders: generate weekly demand for each market week in the next 18 weeks
+  // Standing orders: generate weekly demand for each market week in the next 26 weeks
   if (marketConfig.enabled && !marketConfig.manualPause) {
-    const windowEnd = addDays(today, 18 * 7);
+    const windowEnd = addDays(today, 26 * 7);
     let cursor = new Date(today);
     // advance to next Saturday (start of market week)
     while (cursor.getDay() !== 6) cursor = new Date(cursor.getTime() + 86400000);
@@ -1176,14 +1174,12 @@ const plantTodayTasks = useMemo(() => {
           if (!item.active || item.weeklyQty <= 0) continue;
           const normalized = normalizeCropKey(item.crop);
           const cropKey = cropAliases[normalized] || normalized;
-          let qtyInLbs = quantityToLbs(item.unitType, item.weeklyQty);
-          if (item.unitType === "Plants" && item.weeklyQty > 0) {
-            const profile = getCropProfile(cropKey);
-            qtyInLbs = Math.round(item.weeklyQty * (profile.expectedLbsPerTower / HALF_TRAY_SEEDS) * 1000) / 1000;
-          }
-          if (qtyInLbs <= 0) continue;
+          const isPlants = item.unitType === "Plants";
+          const qtyInPlants = isPlants ? item.weeklyQty : 0;
+          const qtyInLbs = isPlants ? 0 : quantityToLbs(item.unitType, item.weeklyQty);
+          if (qtyInPlants <= 0 && qtyInLbs <= 0) continue;
           const recipe = SALAD_MIX_RECIPES[cropKey];
-          if (recipe) {
+          if (recipe && qtyInLbs > 0) {
             const totalRecipeOz = recipe.reduce((s, c) => s + c.oz, 0);
             for (const { crop: compCrop, oz } of recipe) {
               demands.push({
@@ -1191,11 +1187,12 @@ const plantTodayTasks = useMemo(() => {
                 cropName: formatCropLabel(compCrop),
                 dueDate,
                 qtyInLbs: Math.round(qtyInLbs * (oz / totalRecipeOz) * 1000) / 1000,
+                qtyInPlants: 0,
                 customer: `Farmers Market (${formatCropLabel(cropKey)})`,
               });
             }
-          } else {
-            demands.push({ cropKey, cropName: item.crop, dueDate, qtyInLbs, customer: "Farmers Market" });
+          } else if (!recipe) {
+            demands.push({ cropKey, cropName: item.crop, dueDate, qtyInLbs, qtyInPlants, customer: "Farmers Market" });
           }
         }
       }
@@ -1206,7 +1203,7 @@ const plantTodayTasks = useMemo(() => {
   demands.sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
 
   for (const demand of demands) {
-    const { cropKey, cropName, dueDate, qtyInLbs, customer } = demand;
+    const { cropKey, cropName, dueDate, qtyInLbs, qtyInPlants, customer } = demand;
     const seedByDate = addDays(dueDate, -42);
 
     const pool =
@@ -1229,15 +1226,24 @@ const plantTodayTasks = useMemo(() => {
       }
     }
 
-    const shortageLbs = Math.max(0, qtyInLbs - availableLbsByDue);
-    const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropKey, HALF_TRAY_SEEDS));
-    const newTowersNeeded = shortageLbs > 0 ? Math.ceil(shortageLbs / avgQtyPerTower) : 0;
+    let newTowersNeeded: number;
+    if (qtyInPlants > 0) {
+      // Whole-head crops: compare plants directly to avoid lbs-per-plant mismatch
+      const shortagePlants = Math.max(0, qtyInPlants - availablePlantsByDue);
+      newTowersNeeded = shortagePlants > 0 ? Math.ceil(shortagePlants / HALF_TRAY_SEEDS) : 0;
+      const consumedPlants = Math.min(qtyInPlants, availablePlantsByDue);
+      const lbsPerPlant = availablePlantsByDue > 0 ? availableLbsByDue / availablePlantsByDue : 0;
+      pool.readyLbs = Math.max(0, pool.readyLbs - consumedPlants * lbsPerPlant);
+      pool.readyPlants = Math.max(0, pool.readyPlants - consumedPlants);
+    } else {
+      const shortageLbs = Math.max(0, qtyInLbs - availableLbsByDue);
+      const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropKey, HALF_TRAY_SEEDS));
+      newTowersNeeded = shortageLbs > 0 ? Math.ceil(shortageLbs / avgQtyPerTower) : 0;
+      const consumedLbs = Math.min(qtyInLbs, availableLbsByDue);
+      pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
+      pool.readyPlants = Math.max(0, availablePlantsByDue - Math.round((consumedLbs * 16) / 6));
+    }
 
-    const consumedLbs = Math.min(qtyInLbs, availableLbsByDue);
-    const consumedPlants = Math.min(Math.round((consumedLbs * 16) / 6), availablePlantsByDue);
-
-    pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
-    pool.readyPlants = Math.max(0, availablePlantsByDue - consumedPlants);
     pool.futureEntries = remainingFutureEntries;
     cropPools.set(cropKey, pool);
 
