@@ -1028,16 +1028,18 @@ const plantTodayTasks = useMemo(() => {
     ).length;
 
     const cropInventory = inventoryByCrop.get(cropName);
-    const key = `${seedByDate}__${cropName}`;
     const urgency: "Overdue" | "Today" | "Upcoming" =
       seedByDate < today ? "Overdue" : seedByDate === today ? "Today" : "Upcoming";
+    // Collapse all overdue entries for the same crop into a single "seed today" group
+    const effectiveSeedByDate = seedByDate < today ? today : seedByDate;
+    const key = `${effectiveSeedByDate}__${cropName}`;
 
     const current = grouped.get(key) || {
       crop: cropName,
       totalTowers: 0,
       orders: [],
       orderCount: 0,
-      seedByDate,
+      seedByDate: effectiveSeedByDate,
       earliestDueDate: dueDate,
       currentAvailableLbs: cropInventory ? cropInventory.availableLbs : 0,
       currentAvailablePlants: cropInventory ? cropInventory.availablePlants : 0,
@@ -1055,6 +1057,58 @@ const plantTodayTasks = useMemo(() => {
 
     grouped.set(key, current);
   }
+
+  // Replacement seeding: trimmed towers with <= 3 trims remaining (6 weeks of production left)
+  for (const item of activeInventory) {
+    const stage = normalizeStatus(getInventoryStage(item));
+    if (stage !== "trimmed") continue;
+
+    const trimCount = toNumber(getInventoryTrimCount(item));
+    const remainingTrims = MAX_TRIMS - trimCount;
+    if (remainingTrims > 3) continue;
+
+    const cropName = getInventoryCrop(item) || "Unknown Crop";
+    const exhaustDate = addDays(today, remainingTrims * TRIM_REGROWTH_DAYS);
+    const seedByDate = addDays(exhaustDate, -42);
+    const urgency: "Overdue" | "Today" | "Upcoming" =
+      seedByDate < today ? "Overdue" : seedByDate === today ? "Today" : "Upcoming";
+
+    const towerLabel = getInventoryTower(item) || `row ${item.rowNumber}`;
+    const replacementLabel = `Replace tower ${towerLabel} (trim ${trimCount}/${MAX_TRIMS})`;
+    const effectiveReplaceSeedByDate = seedByDate < today ? today : seedByDate;
+    const key = `${effectiveReplaceSeedByDate}__${cropName}`;
+
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.totalTowers += 1;
+      existing.orders.push(replacementLabel);
+    } else {
+      const seededCount = activeInventory.filter(
+        (i) => getInventoryCrop(i) === cropName && normalizeStatus(getInventoryStage(i)) === "seeded"
+      ).length;
+      const pipelineCount = activeInventory.filter(
+        (i) =>
+          getInventoryCrop(i) === cropName &&
+          ["seeded", "transplanted", "growing", "ready", "trimmed"].includes(normalizeStatus(getInventoryStage(i))) &&
+          !["harvested", "lost", "scrapped", "closed"].includes(normalizeStatus(getInventoryStatus(i)))
+      ).length;
+      const cropInventory = inventoryByCrop.get(cropName);
+      grouped.set(key, {
+        crop: cropName,
+        totalTowers: 1,
+        orders: [replacementLabel],
+        orderCount: 0,
+        seedByDate: effectiveReplaceSeedByDate,
+        earliestDueDate: exhaustDate,
+        currentAvailableLbs: cropInventory ? cropInventory.availableLbs : 0,
+        currentAvailablePlants: cropInventory ? cropInventory.availablePlants : 0,
+        seededCount,
+        pipelineCount,
+        urgency,
+      });
+    }
+  }
+
 
   return Array.from(grouped.values()).sort((a, b) => {
     const dateCompare =
