@@ -986,7 +986,7 @@ const plantTodayTasks = useMemo(() => {
   >();
 
   for (const [cropName, cropInventory] of inventoryByCrop.entries()) {
-    cropPools.set(cropName, {
+    cropPools.set(cropName.toLowerCase(), {
       readyLbs: cropInventory.readyNowLbs,
       readyPlants: cropInventory.readyNowPlants,
       futureEntries: cropInventory.futureEntries.map((entry) => ({ ...entry })),
@@ -1013,7 +1013,7 @@ const plantTodayTasks = useMemo(() => {
   const today = formatDateInput(new Date());
 
   for (const order of openOrders) {
-    const cropName = getOrderCrop(order) || "Unknown Crop";
+    const cropName = (getOrderCrop(order) || "").trim() || "Unknown Crop";
     const dueDate = getOrderRequestedDeliveryDate(order);
     if (!dueDate) continue;
 
@@ -1023,8 +1023,9 @@ const plantTodayTasks = useMemo(() => {
     const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
     const seedByDate = addDays(dueDate, -42);
 
+    const cropKey = cropName.toLowerCase();
     const pool =
-      cropPools.get(cropName) || {
+      cropPools.get(cropKey) || cropPools.get(cropName) || {
         readyLbs: 0,
         readyPlants: 0,
         futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
@@ -1055,27 +1056,27 @@ const plantTodayTasks = useMemo(() => {
     pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
     pool.readyPlants = Math.max(0, availablePlantsByDue - consumedPlants);
     pool.futureEntries = remainingFutureEntries;
-    cropPools.set(cropName, pool);
+    cropPools.set(cropKey, pool);
 
     if (newTowersNeeded <= 0 || !seedByDate) continue;
 
     const seededCount = activeInventory.filter(
-      (item) => getInventoryCrop(item) === cropName && normalizeStatus(getInventoryStage(item)) === "seeded"
+      (item) => (getInventoryCrop(item) || "").trim().toLowerCase() === cropKey && normalizeStatus(getInventoryStage(item)) === "seeded"
     ).length;
 
     const pipelineCount = activeInventory.filter(
       (item) =>
-        getInventoryCrop(item) === cropName &&
+        (getInventoryCrop(item) || "").trim().toLowerCase() === cropKey &&
         ["seeded", "transplanted", "growing", "ready"].includes(normalizeStatus(getInventoryStage(item))) &&
         !["harvested", "lost", "scrapped", "closed"].includes(normalizeStatus(getInventoryStatus(item)))
     ).length;
 
-    const cropInventory = inventoryByCrop.get(cropName);
+    const cropInventory = inventoryByCrop.get(cropName) || inventoryByCrop.get(cropKey);
     const urgency: "Overdue" | "Today" | "Upcoming" =
       seedByDate < today ? "Overdue" : seedByDate === today ? "Today" : "Upcoming";
     // Collapse all overdue entries for the same crop into a single "seed today" group
     const effectiveSeedByDate = seedByDate < today ? today : seedByDate;
-    const key = `${effectiveSeedByDate}__${cropName}`;
+    const key = `${effectiveSeedByDate}__${cropKey}`;
 
     const current = grouped.get(key) || {
       crop: cropName,
