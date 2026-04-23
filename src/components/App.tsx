@@ -726,6 +726,7 @@ export default function App() {
   // Staff Daily action helpers
   const [dailyMessage, setDailyMessage] = useState("");
   const [plantingTrayType, setPlantingTrayType] = useState<Record<string, "Full Tray" | "Half Tray">>({});
+  const [plantedDates, setPlantedDates] = useState<Record<string, string>>({});
   const [activeHarvestRowNumber, setActiveHarvestRowNumber] = useState("");
   const [harvestActionType, setHarvestActionType] = useState<"Full Harvest" | "Trim Harvest">("Full Harvest");
   const [harvestPodsValue, setHarvestPodsValue] = useState("");
@@ -735,6 +736,13 @@ export default function App() {
   const [staffLookupCrop, setStaffLookupCrop] = useState("");
   const [quickEntryUnitType, setQuickEntryUnitType] = useState<OrderUnitType>("Lbs");
   const [seedScheduleFilter, setSeedScheduleFilter] = useState<"Today" | "This Week" | "This Month" | "3 Months">("Today");
+  const [seededEditRowNumber, setSeededEditRowNumber] = useState<number | null>(null);
+  const [seededEditTower, setSeededEditTower] = useState("");
+  const [seededEditSeededDate, setSeededEditSeededDate] = useState("");
+  const [seededEditCrop, setSeededEditCrop] = useState("");
+  const [seededEditActivePods, setSeededEditActivePods] = useState("");
+  const [seededEditMessage, setSeededEditMessage] = useState("");
+  const [seededEditSaving, setSeededEditSaving] = useState(false);
 
   const [marketConfig, setMarketConfig] = useState<FarmersMarketConfig>(() => {
     try {
@@ -1955,7 +1963,42 @@ const overdueOrders = useMemo(() => {
       const result = await postToBackend(payload);
 
       if (result.ok) {
-        setMessage("Saved to Staff_Actions.");
+        if (isSeedMode) {
+          const seedsPerTrayVal = quickTrayType === "Full Tray" ? FULL_TRAY_SEEDS : HALF_TRAY_SEEDS;
+          const trayCountNum = Math.max(1, Number(quickTrayCount) || 1);
+          const activePods = seedsPerTrayVal;
+          const expectedLbs = calculateExpectedLbs(crop, activePods, "Low Density");
+          const seedDate = entryDate || formatDateInput(new Date());
+          let invFailed = false;
+          for (let i = 0; i < trayCountNum; i += 1) {
+            const invResult = await postToBackend({
+              action: "saveProductionInventory",
+              tower: "",
+              towerType: "Low Density",
+              maxPods: activePods,
+              activePods,
+              crop,
+              stage: "Seeded",
+              seededDate: seedDate,
+              transplantDate: "",
+              estimatedReadyDate: addDays(seedDate, 42),
+              expectedLbs,
+              remainingExpectedLbs: expectedLbs,
+              status: "Active",
+              notes: `Created from Quick Action Seed: ${trayCountNum} ${quickTrayType}${trayCountNum !== 1 ? "s" : ""}.`,
+            });
+            if (!invResult.ok) { invFailed = true; break; }
+          }
+          if (invFailed) {
+            setMessage("Staff action saved but inventory creation failed for one or more trays.");
+          } else {
+            setMessage("Saved to Staff_Actions and added to Seeded inventory.");
+          }
+          await Promise.all([loadStaffActions(), loadProductionInventory()]);
+        } else {
+          setMessage("Saved to Staff_Actions.");
+          await loadStaffActions();
+        }
         setTower("");
         setCrop("");
         setLbs("");
@@ -1966,7 +2009,6 @@ const overdueOrders = useMemo(() => {
         setScrapType("");
         setNote("");
         setQuickTrayCount("1");
-        await loadStaffActions();
       } else {
         setMessage(result.message || "Unable to save entry.");
       }
@@ -2536,6 +2578,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             new Date(getOrderRequestedDeliveryDate(b) || "2100-01-01").getTime()
         );
 
+      const seedDate = plantedDates[task.crop] || formatDateInput(new Date());
       const actionResult = await postToBackend({
         action: "saveStaffAction",
         mode: "Plant",
@@ -2545,7 +2588,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         podsChanged: maxPods * towersToCreate,
         status: "Completed",
         stage: "Seeded",
-        date: formatDateInput(new Date()),
+        date: seedDate,
         scrapType: "",
         note: `Planted ${trayNote} for due date ${task.earliestDueDate || ""}.`,
       });
@@ -2564,9 +2607,9 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           activePods: maxPods,
           crop: task.crop,
           stage: "Seeded",
-          seededDate: formatDateInput(new Date()),
+          seededDate: seedDate,
           transplantDate: "",
-          estimatedReadyDate: addDays(formatDateInput(new Date()), 42),
+          estimatedReadyDate: addDays(seedDate, 42),
           expectedLbs,
           remainingExpectedLbs: expectedLbs,
           status: "Active",
@@ -2613,6 +2656,71 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     } catch (error) {
       console.error("handleMarkPlanted error:", error);
       setDailyMessage("Error marking planted.");
+    }
+  };
+
+  const handleDeleteSeededEntry = async (rowNumber: number) => {
+    try {
+      const result = await postToBackend({
+        action: "updateProductionInventoryStatus",
+        rowNumber,
+        status: "Scrapped",
+      });
+      if (result.ok) {
+        await loadProductionInventory();
+      } else {
+        setDailyMessage("Unable to delete seeded entry.");
+      }
+    } catch (error) {
+      console.error("handleDeleteSeededEntry error:", error);
+      setDailyMessage("Error deleting seeded entry.");
+    }
+  };
+
+  const startEditSeededEntry = (item: ProductionInventoryRow) => {
+    setSeededEditRowNumber(item.rowNumber);
+    setSeededEditTower(getInventoryTower(item) || "");
+    setSeededEditSeededDate(getInventorySeededDate(item) || "");
+    setSeededEditCrop(getInventoryCrop(item) || "");
+    setSeededEditActivePods(String(getInventoryActivePods(item) || ""));
+    setSeededEditMessage("");
+  };
+
+  const cancelEditSeededEntry = () => {
+    setSeededEditRowNumber(null);
+    setSeededEditTower("");
+    setSeededEditSeededDate("");
+    setSeededEditCrop("");
+    setSeededEditActivePods("");
+    setSeededEditMessage("");
+  };
+
+  const handleSaveSeededEdit = async () => {
+    if (!seededEditRowNumber) return;
+    setSeededEditSaving(true);
+    setSeededEditMessage("");
+    try {
+      const result = await postToBackend({
+        action: "updateProductionInventoryRow",
+        rowNumber: seededEditRowNumber,
+        tower: seededEditTower,
+        seededDate: seededEditSeededDate,
+        crop: seededEditCrop,
+        activePods: toNumber(seededEditActivePods),
+        estimatedReadyDate: seededEditSeededDate ? addDays(seededEditSeededDate, 42) : "",
+      });
+      if (result.ok) {
+        setSeededEditMessage("Saved.");
+        cancelEditSeededEntry();
+        await loadProductionInventory();
+      } else {
+        setSeededEditMessage(result.message || "Unable to save changes.");
+      }
+    } catch (error) {
+      console.error("handleSaveSeededEdit error:", error);
+      setSeededEditMessage("Error saving changes.");
+    } finally {
+      setSeededEditSaving(false);
     }
   };
 
@@ -4112,13 +4220,14 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <th style={thStyle}>Pipeline</th>
               <th style={thStyle}>Orders</th>
               <th style={thStyle}>Tray Type</th>
+              <th style={thStyle}>Seeded Date</th>
               <th style={thStyle}>Action</th>
             </tr>
           </thead>
           <tbody>
             {filteredPlantTodayTasks.length === 0 ? (
               <tr>
-                <td colSpan={12} style={tdStyle}>
+                <td colSpan={13} style={tdStyle}>
                   No seeding tasks right now.
                 </td>
               </tr>
@@ -4161,6 +4270,17 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     </select>
                   </td>
                   <td style={tdStyle}>
+                    <input
+                      type="date"
+                      value={plantedDates[task.crop] || ""}
+                      onChange={(e) =>
+                        setPlantedDates((prev) => ({ ...prev, [task.crop]: e.target.value }))
+                      }
+                      style={{ ...compactInputStyle, minWidth: 130 }}
+                      placeholder={formatDateInput(new Date())}
+                    />
+                  </td>
+                  <td style={tdStyle}>
                     <button onClick={() => handleMarkPlanted(task)} style={primaryButtonStyle}>
                       Mark Planted
                     </button>
@@ -4185,26 +4305,105 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <th style={thStyle}>Active Pods</th>
               <th style={thStyle}>Seeded Date</th>
               <th style={thStyle}>Ready Date</th>
+              <th style={thStyle}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {seededInventory.length === 0 ? (
               <tr>
-                <td colSpan={6} style={tdStyle}>
+                <td colSpan={7} style={tdStyle}>
                   No seeded inventory entries yet.
                 </td>
               </tr>
             ) : (
-              seededInventory.map((item) => (
-                <tr key={item.rowNumber}>
-                  <td style={tdStyle}>{getInventoryTower(item) || "-"}</td>
-                  <td style={tdStyle}>{getInventoryTowerType(item)}</td>
-                  <td style={tdStyle}>{getInventoryCrop(item)}</td>
-                  <td style={tdStyle}>{getInventoryActivePods(item)}</td>
-                  <td style={tdStyle}>{formatDateDisplay(getInventorySeededDate(item))}</td>
-                  <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
-                </tr>
-              ))
+              seededInventory.map((item) => {
+                const isEditing = seededEditRowNumber === item.rowNumber;
+                if (isEditing) {
+                  return (
+                    <tr key={item.rowNumber} style={{ background: "#f8fafc" }}>
+                      <td style={tdStyle}>
+                        <input
+                          value={seededEditTower}
+                          onChange={(e) => setSeededEditTower(e.target.value)}
+                          style={{ ...compactInputStyle, width: 60 }}
+                          placeholder="R1"
+                        />
+                      </td>
+                      <td style={tdStyle}>{getInventoryTowerType(item)}</td>
+                      <td style={tdStyle}>
+                        <select
+                          value={seededEditCrop}
+                          onChange={(e) => setSeededEditCrop(e.target.value)}
+                          style={compactInputStyle}
+                        >
+                          <option value="">-- crop --</option>
+                          {uniqueCrops.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </td>
+                      <td style={tdStyle}>
+                        <input
+                          type="number"
+                          value={seededEditActivePods}
+                          onChange={(e) => setSeededEditActivePods(e.target.value)}
+                          style={{ ...compactInputStyle, width: 60 }}
+                        />
+                      </td>
+                      <td style={tdStyle}>
+                        <input
+                          type="date"
+                          value={seededEditSeededDate}
+                          onChange={(e) => setSeededEditSeededDate(e.target.value)}
+                          style={{ ...compactInputStyle, minWidth: 130 }}
+                        />
+                      </td>
+                      <td style={tdStyle}>{seededEditSeededDate ? formatDateDisplay(addDays(seededEditSeededDate, 42)) : "-"}</td>
+                      <td style={tdStyle}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button
+                            onClick={handleSaveSeededEdit}
+                            disabled={seededEditSaving}
+                            style={primaryButtonStyle}
+                          >
+                            {seededEditSaving ? "Saving…" : "Save"}
+                          </button>
+                          <button onClick={cancelEditSeededEntry} style={secondaryButtonStyle}>Cancel</button>
+                        </div>
+                        {seededEditMessage && <div style={{ fontSize: 12, marginTop: 4, color: seededEditMessage === "Saved." ? "#16a34a" : "#dc2626" }}>{seededEditMessage}</div>}
+                      </td>
+                    </tr>
+                  );
+                }
+                return (
+                  <tr key={item.rowNumber}>
+                    <td style={tdStyle}>{getInventoryTower(item) || "-"}</td>
+                    <td style={tdStyle}>{getInventoryTowerType(item)}</td>
+                    <td style={tdStyle}>{getInventoryCrop(item)}</td>
+                    <td style={tdStyle}>{getInventoryActivePods(item)}</td>
+                    <td style={tdStyle}>{formatDateDisplay(getInventorySeededDate(item))}</td>
+                    <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
+                    <td style={tdStyle}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          onClick={() => startEditSeededEntry(item)}
+                          style={secondaryButtonStyle}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm("Delete this seeded entry?")) {
+                              handleDeleteSeededEntry(item.rowNumber);
+                            }
+                          }}
+                          style={{ ...secondaryButtonStyle, color: "#dc2626", borderColor: "#fca5a5" }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
