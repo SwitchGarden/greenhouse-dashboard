@@ -111,3 +111,6 @@ export const getInventoryRemainingExpectedLbs = (row: ProductionInventoryRow): n
 export const getInventoryStatus = (row: ProductionInventoryRow): string => row.status || row.Status || "";
 
 export const getInventoryNotes = (row: ProductionInventoryRow): string => row.notes || row.Notes || "";
+
+export const getInventoryTrimCount = (row: ProductionInventoryRow): number | string =>
+  row.trimCount ?? row["Trim Count"] ?? 0;

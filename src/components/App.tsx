@@ -32,6 +32,8 @@ import {
   SIX_OZ_IN_LBS,
   SMALL_BAG_OZ_IN_LBS,
   REPEAT_HARVEST_CROPS,
+  MAX_TRIMS,
+  TRIM_REGROWTH_DAYS,
 } from "../lib/utils/cropUtils";
 import {
   toNumber,
@@ -54,6 +56,7 @@ import {
   getInventoryRemainingExpectedLbs,
   getInventoryStatus,
   getInventoryNotes,
+  getInventoryTrimCount,
 } from "../lib/utils/inventoryUtils";
 import {
   getOrderCustomer,
@@ -312,7 +315,7 @@ export default function App() {
       const itemStatus = normalizeStatus(getInventoryStatus(item));
       const itemStage = normalizeStatus(getInventoryStage(item));
       const readyDate = getInventoryEffectiveReadyDate(item);
-      const readyNow = !!readyDate && readyDate <= today && ["transplanted", "growing", "ready"].includes(itemStage);
+      const readyNow = !!readyDate && readyDate <= today && ["transplanted", "growing", "ready", "trimmed"].includes(itemStage);
 
       current.towers += 1;
       current.availableLbs += remainingLbs;
@@ -323,7 +326,8 @@ export default function App() {
         itemStage === "growing" ||
         itemStage === "transplanted" ||
         itemStage === "ready" ||
-        itemStage === "seeded"
+        itemStage === "seeded" ||
+        itemStage === "trimmed"
       ) {
         current.pipelineTowers += 1;
       }
@@ -562,7 +566,7 @@ const plantTodayTasks = useMemo(() => {
     const pipelineCount = activeInventory.filter(
       (item) =>
         getInventoryCrop(item) === cropName &&
-        ["seeded", "transplanted", "growing", "ready"].includes(normalizeStatus(getInventoryStage(item))) &&
+        ["seeded", "transplanted", "growing", "ready", "trimmed"].includes(normalizeStatus(getInventoryStage(item))) &&
         !["harvested", "lost", "scrapped", "closed"].includes(normalizeStatus(getInventoryStatus(item)))
     ).length;
 
@@ -593,6 +597,56 @@ const plantTodayTasks = useMemo(() => {
     }
 
     grouped.set(key, current);
+  }
+
+  // Replacement seeding: trimmed towers with <= 3 trims remaining (6 weeks of production left)
+  for (const item of activeInventory) {
+    const stage = normalizeStatus(getInventoryStage(item));
+    if (stage !== "trimmed") continue;
+
+    const trimCount = toNumber(getInventoryTrimCount(item));
+    const remainingTrims = MAX_TRIMS - trimCount;
+    if (remainingTrims > 3) continue;
+
+    const cropName = getInventoryCrop(item) || "Unknown Crop";
+    const exhaustDate = addDays(today, remainingTrims * TRIM_REGROWTH_DAYS);
+    const seedByDate = addDays(exhaustDate, -42);
+    const urgency: "Overdue" | "Today" | "Upcoming" =
+      seedByDate < today ? "Overdue" : seedByDate === today ? "Today" : "Upcoming";
+
+    const towerLabel = getInventoryTower(item) || `row ${item.rowNumber}`;
+    const replacementLabel = `Replace tower ${towerLabel} (trim ${trimCount}/${MAX_TRIMS})`;
+    const key = `${seedByDate}__${cropName}`;
+
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.totalTowers += 1;
+      existing.orders.push(replacementLabel);
+    } else {
+      const seededCount = activeInventory.filter(
+        (i) => getInventoryCrop(i) === cropName && normalizeStatus(getInventoryStage(i)) === "seeded"
+      ).length;
+      const pipelineCount = activeInventory.filter(
+        (i) =>
+          getInventoryCrop(i) === cropName &&
+          ["seeded", "transplanted", "growing", "ready", "trimmed"].includes(normalizeStatus(getInventoryStage(i))) &&
+          !["harvested", "lost", "scrapped", "closed"].includes(normalizeStatus(getInventoryStatus(i)))
+      ).length;
+      const cropInventory = inventoryByCrop.get(cropName);
+      grouped.set(key, {
+        crop: cropName,
+        totalTowers: 1,
+        orders: [replacementLabel],
+        orderCount: 0,
+        seedByDate,
+        earliestDueDate: exhaustDate,
+        currentAvailableLbs: cropInventory ? cropInventory.availableLbs : 0,
+        currentAvailablePlants: cropInventory ? cropInventory.availablePlants : 0,
+        seededCount,
+        pipelineCount,
+        urgency,
+      });
+    }
   }
 
   return Array.from(grouped.values()).sort((a, b) => {
@@ -638,7 +692,7 @@ const readyToHarvestInventory = useMemo(() => {
       const readyDate = getInventoryEffectiveReadyDate(item);
 
       if (["harvested", "lost", "scrapped", "closed"].includes(status)) return false;
-      if (!["transplanted", "growing", "ready"].includes(stage)) return false;
+      if (!["transplanted", "growing", "ready", "trimmed"].includes(stage)) return false;
       if (!readyDate) return false;
 
       return readyDate <= today;
@@ -1784,8 +1838,14 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       const newActivePods = isFullHarvest ? Math.max(0, currentActivePods - podsWorked) : currentActivePods;
       const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - harvestLbs) * 100) / 100);
       const isFinished = newActivePods <= 0 || newRemainingLbs <= 0.01;
-      const newStatus = isFinished ? "Harvested" : getInventoryStatus(selected) || "Active";
-      const newStage = isFinished ? "Harvested" : getInventoryStage(selected) || "Ready";
+      const currentTrimCount = toNumber(getInventoryTrimCount(selected));
+      const newTrimCount = !isFullHarvest && !isFinished ? currentTrimCount + 1 : currentTrimCount;
+      const isFinalTrim = newTrimCount >= MAX_TRIMS;
+      const newStatus = isFinished || isFinalTrim ? "Harvested" : getInventoryStatus(selected) || "Active";
+      const newStage = isFinished || isFinalTrim ? "Harvested" : !isFullHarvest ? "Trimmed" : getInventoryStage(selected) || "Ready";
+      const newEstimatedReadyDate = !isFinished && !isFinalTrim && !isFullHarvest
+        ? addDays(formatDateInput(new Date()), TRIM_REGROWTH_DAYS)
+        : getInventoryEstimatedReadyDate(selected);
       const actionNote = [
         harvestForm.actionType,
         `${outputQty} ${getUnitLabel(harvestForm.outputUnit)}`,
@@ -1826,10 +1886,11 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         stage: newStage,
         seededDate: getInventorySeededDate(selected),
         transplantDate: getInventoryTransplantDate(selected),
-        estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
+        estimatedReadyDate: newEstimatedReadyDate,
         expectedLbs: currentExpectedLbs,
         remainingExpectedLbs: newRemainingLbs,
         status: newStatus,
+        trimCount: newTrimCount,
         notes: updatedNotes,
       });
 
@@ -1841,6 +1902,10 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       setDailyMessage(
         isFinished
           ? `Harvest saved for ${getInventoryCrop(selected)}. That row is complete and removed from Ready to Harvest.`
+          : isFinalTrim
+          ? `Final trim saved for ${getInventoryCrop(selected)}. Tower is complete — time to seed a replacement.`
+          : !isFullHarvest
+          ? `Trim ${newTrimCount}/${MAX_TRIMS} saved for ${getInventoryCrop(selected)}. Ready again in ${TRIM_REGROWTH_DAYS} days.`
           : `Harvest saved for ${getInventoryCrop(selected)}.`
       );
       clearReadyHarvestAction();

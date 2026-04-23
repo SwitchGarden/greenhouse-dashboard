@@ -99,6 +99,8 @@ export type ProductionInventoryRow = {
   remainingExpectedLbs?: number | string;
   status?: string;
   notes?: string;
+  "Trim Count"?: number | string;
+  trimCount?: number | string;
 };
 
 export type OrderUnitType = "Lbs" | "Plants" | "6oz Bag" | "6oz Clamshell" | "0.75oz Small Bag";

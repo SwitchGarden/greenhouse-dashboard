@@ -49,8 +49,8 @@ import {
   getStaffTimestamp,
   getStaffDate,
 } from "../lib/utils/staffUtils";
-import { quantityToLbs } from "../lib/utils/cropUtils";
-import { toNumber } from "../lib/utils/inventoryUtils";
+import { quantityToLbs, MAX_TRIMS } from "../lib/utils/cropUtils";
+import { toNumber, getInventoryTrimCount } from "../lib/utils/inventoryUtils";
 
 type PlantTask = {
   crop: string;
@@ -522,13 +522,14 @@ export function StaffDaily({
                   <th style={thStyle}>Expected Lbs</th>
                   <th style={thStyle}>Remaining Lbs</th>
                   <th style={thStyle}>Ready Date</th>
+                  <th style={thStyle}>Trims</th>
                   <th style={thStyle}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {readyToHarvestInventory.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={tdStyle}>No inventory entries are ready to harvest today.</td>
+                    <td colSpan={9} style={tdStyle}>No inventory entries are ready to harvest today.</td>
                   </tr>
                 ) : (
                   readyToHarvestInventory.map((item) => {
@@ -544,6 +545,11 @@ export function StaffDaily({
                           <td style={tdStyle}>{getInventoryRemainingExpectedLbs(item)}</td>
                           <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
                           <td style={tdStyle}>
+                            {toNumber(getInventoryTrimCount(item)) > 0
+                              ? `${toNumber(getInventoryTrimCount(item))}/${MAX_TRIMS}`
+                              : "-"}
+                          </td>
+                          <td style={tdStyle}>
                             <button
                               onClick={() => startReadyHarvestAction(item)}
                               style={primaryButtonStyle}
@@ -555,7 +561,7 @@ export function StaffDaily({
                         </tr>
                         {isActiveRow && (
                           <tr>
-                            <td colSpan={8} style={{ ...tdStyle, background: "#f8fafc" }}>
+                            <td colSpan={9} style={{ ...tdStyle, background: "#f8fafc" }}>
                               <FormGrid columns={3}>
                                 <Field label="Harvest Type">
                                   <select value={harvestForm.actionType} onChange={(e) => dispatchHarvest({ type: "SET_FIELD", field: "actionType", value: e.target.value })} style={compactInputStyle}>
