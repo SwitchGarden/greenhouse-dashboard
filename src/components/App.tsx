@@ -107,6 +107,22 @@ type ProductionInventoryRow = {
 
 type OrderUnitType = "Lbs" | "Plants" | "6oz Bag" | "6oz Clamshell" | "0.75oz Small Bag";
 
+type StandingOrderItem = {
+  id: string;
+  crop: string;
+  unitType: OrderUnitType;
+  weeklyQty: number;
+  active: boolean;
+};
+
+type FarmersMarketConfig = {
+  enabled: boolean;
+  seasonStart: number; // 1–12
+  seasonEnd: number;   // 1–12
+  manualPause: boolean;
+  items: StandingOrderItem[];
+};
+
 type SalesPlannerResult = {
   availableQty: number;
   shortageQty: number;
@@ -134,6 +150,30 @@ const MAX_TRIMS = 5;
 const TRIM_REGROWTH_DAYS = 21;
 const FULL_TRAY_SEEDS = 88;   // one full tray → 2 Low Density towers
 const HALF_TRAY_SEEDS = 44;   // one half tray → 1 Low Density tower
+
+const DEFAULT_MARKET_CONFIG: FarmersMarketConfig = {
+  enabled: true,
+  seasonStart: 2,
+  seasonEnd: 12,
+  manualPause: false,
+  items: [
+    { id: "bh", crop: "Butterhead",   unitType: "Plants",           weeklyQty: 0, active: true },
+    { id: "ro", crop: "Romaine",       unitType: "Plants",           weeklyQty: 0, active: true },
+    { id: "ol", crop: "Oakleaf",       unitType: "Plants",           weeklyQty: 0, active: true },
+    { id: "mu", crop: "Muir",          unitType: "Plants",           weeklyQty: 0, active: true },
+    { id: "sc", crop: "Swiss Chard",   unitType: "Plants",           weeklyQty: 0, active: true },
+    { id: "pa", crop: "Parsley",       unitType: "Plants",           weeklyQty: 0, active: true },
+    { id: "ci", crop: "Cilantro",      unitType: "Plants",           weeklyQty: 0, active: true },
+    { id: "su", crop: "Sunset Mix",    unitType: "6oz Clamshell",    weeklyQty: 0, active: true },
+    { id: "sm", crop: "Salad Mix",     unitType: "6oz Clamshell",    weeklyQty: 0, active: true },
+    { id: "hm", crop: "Harvest Mix",   unitType: "6oz Bag",          weeklyQty: 0, active: true },
+    { id: "km", crop: "Kale Mix",      unitType: "6oz Bag",          weeklyQty: 0, active: true },
+    { id: "ar", crop: "Arugula",       unitType: "6oz Bag",          weeklyQty: 0, active: true },
+    { id: "ba", crop: "Basil",         unitType: "0.75oz Small Bag", weeklyQty: 0, active: true },
+    { id: "mi", crop: "Mint",          unitType: "0.75oz Small Bag", weeklyQty: 0, active: true },
+    { id: "di", crop: "Dill",          unitType: "0.75oz Small Bag", weeklyQty: 0, active: true },
+  ],
+};
 
 const REPEAT_HARVEST_CROPS = new Set([
   "arugula", "basil", "thai_basil", "mint", "kale", "brassica",
@@ -219,6 +259,8 @@ const CROP_PROFILES: Record<
   wildfire: { expectedLbsPerTower: 5.5 },
   sunset_mix: { expectedLbsPerTower: 0 },
   salad_mix: { expectedLbsPerTower: 0 },
+  harvest_mix: { expectedLbsPerTower: 0 },
+  kale_mix: { expectedLbsPerTower: 0 },
 };
 const normalizeCropKey = (crop: string = "") =>
   crop
@@ -256,6 +298,10 @@ const cropAliases: Record<string, string> = {
   romaine_lettuce: "romaine",
   cos: "romaine",
   cos_lettuce: "romaine",
+  harvest_mix: "harvest_mix",
+  harvestmix: "harvest_mix",
+  kale_mix: "kale_mix",
+  kalemix: "kale_mix",
 };
 const validateTowerName = (tower: string): string => {
   if (!tower) return "";
@@ -666,6 +712,15 @@ export default function App() {
   const [quickEntryUnitType, setQuickEntryUnitType] = useState<OrderUnitType>("Lbs");
   const [seedScheduleFilter, setSeedScheduleFilter] = useState<"Today" | "This Week" | "This Month" | "3 Months">("Today");
 
+  const [marketConfig, setMarketConfig] = useState<FarmersMarketConfig>(() => {
+    try {
+      const saved = localStorage.getItem("farmersMarketConfig");
+      if (saved) return { ...DEFAULT_MARKET_CONFIG, ...JSON.parse(saved) };
+    } catch { /* ignore */ }
+    return DEFAULT_MARKET_CONFIG;
+  });
+  const [showMarketSettings, setShowMarketSettings] = useState(false);
+
   // Transplant form
   const [transplantRowNumber, setTransplantRowNumber] = useState("");
   const [transplantTower, setTransplantTower] = useState("");
@@ -679,6 +734,10 @@ export default function App() {
   useEffect(() => {
     loadAllData();
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem("farmersMarketConfig", JSON.stringify(marketConfig)); } catch { /* ignore */ }
+  }, [marketConfig]);
 
   useEffect(() => {
     const max = getTowerMaxPods(inventoryTowerType);
@@ -1099,6 +1158,51 @@ const plantTodayTasks = useMemo(() => {
       demands.push({ cropKey, cropName: rawCrop, dueDate, qtyInLbs: totalLbs, customer: getOrderCustomer(order) });
     }
   }
+  // Standing orders: generate weekly demand for each market week in the next 18 weeks
+  if (marketConfig.enabled && !marketConfig.manualPause) {
+    const windowEnd = addDays(today, 18 * 7);
+    let cursor = new Date(today);
+    // advance to next Saturday (start of market week)
+    while (cursor.getDay() !== 6) cursor = new Date(cursor.getTime() + 86400000);
+    while (formatDateInput(cursor) <= windowEnd) {
+      const month = cursor.getMonth() + 1;
+      const { seasonStart, seasonEnd } = marketConfig;
+      const inSeason = seasonStart <= seasonEnd
+        ? month >= seasonStart && month <= seasonEnd
+        : month >= seasonStart || month <= seasonEnd;
+      if (inSeason) {
+        const dueDate = formatDateInput(cursor);
+        for (const item of marketConfig.items) {
+          if (!item.active || item.weeklyQty <= 0) continue;
+          const normalized = normalizeCropKey(item.crop);
+          const cropKey = cropAliases[normalized] || normalized;
+          let qtyInLbs = quantityToLbs(item.unitType, item.weeklyQty);
+          if (item.unitType === "Plants" && item.weeklyQty > 0) {
+            const profile = getCropProfile(cropKey);
+            qtyInLbs = Math.round(item.weeklyQty * (profile.expectedLbsPerTower / HALF_TRAY_SEEDS) * 1000) / 1000;
+          }
+          if (qtyInLbs <= 0) continue;
+          const recipe = SALAD_MIX_RECIPES[cropKey];
+          if (recipe) {
+            const totalRecipeOz = recipe.reduce((s, c) => s + c.oz, 0);
+            for (const { crop: compCrop, oz } of recipe) {
+              demands.push({
+                cropKey: compCrop,
+                cropName: formatCropLabel(compCrop),
+                dueDate,
+                qtyInLbs: Math.round(qtyInLbs * (oz / totalRecipeOz) * 1000) / 1000,
+                customer: `Farmers Market (${formatCropLabel(cropKey)})`,
+              });
+            }
+          } else {
+            demands.push({ cropKey, cropName: item.crop, dueDate, qtyInLbs, customer: "Farmers Market" });
+          }
+        }
+      }
+      cursor = new Date(cursor.getTime() + 7 * 86400000);
+    }
+  }
+
   demands.sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
 
   for (const demand of demands) {
@@ -1238,7 +1342,7 @@ const plantTodayTasks = useMemo(() => {
     if (dateCompare !== 0) return dateCompare;
     return a.crop.localeCompare(b.crop);
   });
-}, [openOrders, activeInventory, inventoryByCrop]);
+}, [openOrders, activeInventory, inventoryByCrop, marketConfig]);
 
 
 const filteredPlantTodayTasks = useMemo(() => {
@@ -3748,6 +3852,88 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 </ActionRow>
               </Panel>
 
+
+    {/* Farmers Market Standing Orders */}
+    <div style={{ background: "rgba(248,250,252,0.98)", border: "2px solid #111827", borderRadius: 18, padding: 22, boxShadow: "0 14px 34px rgba(0,0,0,0.16)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>🌿 Farmers Market</span>
+          {marketConfig.enabled && !marketConfig.manualPause && (() => {
+            const m = new Date().getMonth() + 1;
+            const { seasonStart, seasonEnd } = marketConfig;
+            const inSeason = seasonStart <= seasonEnd ? m >= seasonStart && m <= seasonEnd : m >= seasonStart || m <= seasonEnd;
+            return <span style={{ background: inSeason ? "#dcfce7" : "#fef9c3", color: inSeason ? "#166534" : "#854d0e", border: `1px solid ${inSeason ? "#86efac" : "#fde047"}`, borderRadius: 999, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>{inSeason ? "In Season" : "Off Season"}</span>;
+          })()}
+          {marketConfig.manualPause && <span style={{ background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5", borderRadius: 999, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>Paused</span>}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={() => setMarketConfig(c => ({ ...c, manualPause: !c.manualPause }))} style={{ ...secondaryButtonStyle, fontSize: 13, padding: "6px 12px" }}>
+            {marketConfig.manualPause ? "Resume Market" : "Pause Market"}
+          </button>
+          <button onClick={() => setShowMarketSettings(s => !s)} style={{ ...secondaryButtonStyle, fontSize: 13, padding: "6px 12px" }}>
+            {showMarketSettings ? "Hide Settings" : "Edit Settings"}
+          </button>
+        </div>
+      </div>
+
+      {showMarketSettings && (
+        <div style={{ marginTop: 18 }}>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
+            <label style={{ fontWeight: 700, fontSize: 13, color: "#1e293b", display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="checkbox" checked={marketConfig.enabled} onChange={e => setMarketConfig(c => ({ ...c, enabled: e.target.checked }))} />
+              Standing orders active
+            </label>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ fontWeight: 700, fontSize: 13, color: "#1e293b" }}>Season:</span>
+              <select value={marketConfig.seasonStart} onChange={e => setMarketConfig(c => ({ ...c, seasonStart: Number(e.target.value) }))} style={{ ...inputStyle, width: "auto", padding: "4px 8px", fontSize: 13 }}>
+                {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+              <span style={{ color: "#64748b" }}>to</span>
+              <select value={marketConfig.seasonEnd} onChange={e => setMarketConfig(c => ({ ...c, seasonEnd: Number(e.target.value) }))} style={{ ...inputStyle, width: "auto", padding: "4px 8px", fontSize: 13 }}>
+                {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ ...tableStyle, fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Active</th>
+                  <th style={thStyle}>Crop</th>
+                  <th style={thStyle}>Unit</th>
+                  <th style={thStyle}>Qty / Week</th>
+                </tr>
+              </thead>
+              <tbody>
+                {marketConfig.items.map(item => (
+                  <tr key={item.id}>
+                    <td style={tdStyle}>
+                      <input type="checkbox" checked={item.active} onChange={e => setMarketConfig(c => ({ ...c, items: c.items.map(i => i.id === item.id ? { ...i, active: e.target.checked } : i) }))} />
+                    </td>
+                    <td style={tdStyle}>{item.crop}</td>
+                    <td style={{ ...tdStyle, color: "#64748b", fontSize: 12 }}>{item.unitType}</td>
+                    <td style={tdStyle}>
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.weeklyQty}
+                        onChange={e => setMarketConfig(c => ({ ...c, items: c.items.map(i => i.id === item.id ? { ...i, weeklyQty: Math.max(0, Number(e.target.value)) } : i) }))}
+                        style={{ ...inputStyle, width: 70, padding: "4px 8px", fontSize: 13 }}
+                        placeholder="0"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
+            Settings save automatically to this browser. To sync across devices, contact your developer to enable Google Sheets sync.
+          </div>
+        </div>
+      )}
+    </div>
 
     <Panel title="Seed Today / Seeding Schedule">
       <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
