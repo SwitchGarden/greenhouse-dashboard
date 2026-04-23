@@ -3307,6 +3307,22 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   </select>
                 </Field>
 
+                <Field label="Harvest Type">
+                  <select
+                    value={editInventoryHarvestType || (editInventoryCrop ? (isRepeatHarvestCrop(editInventoryCrop) ? "Trim Harvest" : "Full Harvest") : "Full Harvest")}
+                    onChange={(e) => setEditInventoryHarvestType(e.target.value)}
+                    style={inputStyle}
+                  >
+                    <option value="Full Harvest">Full Harvest (harvest once)</option>
+                    <option value="Trim Harvest">Trim Harvest (trim up to 5×)</option>
+                  </select>
+                  {editInventoryCrop && (
+                    <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>
+                      Default for {editInventoryCrop}: {isRepeatHarvestCrop(editInventoryCrop) ? "Trim Harvest" : "Full Harvest"}
+                    </span>
+                  )}
+                </Field>
+
                 <Field label="Seeded Date">
                   <input type="date" value={editInventorySeededDate} onChange={(e) => setEditInventorySeededDate(e.target.value)} style={inputStyle} />
                 </Field>
