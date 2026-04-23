@@ -738,6 +738,16 @@ export default function App() {
   const [harvestOutputUnit, setHarvestOutputUnit] = useState<OrderUnitType>("Lbs");
   const [harvestOutputQty, setHarvestOutputQty] = useState("");
   const [harvestNote, setHarvestNote] = useState("");
+
+  // Quick Harvest panel
+  const [qhRowNumber, setQhRowNumber] = useState("");
+  const [qhType, setQhType] = useState<"Full Harvest" | "Trim Harvest" | null>(null);
+  const [qhQty, setQhQty] = useState("");
+  const [qhUnit, setQhUnit] = useState<OrderUnitType>("Lbs");
+  const [qhPods, setQhPods] = useState("");
+  const [qhNote, setQhNote] = useState("");
+  const [qhMessage, setQhMessage] = useState("");
+  const [qhSaving, setQhSaving] = useState(false);
   const [staffLookupCrop, setStaffLookupCrop] = useState("");
   const [quickEntryUnitType, setQuickEntryUnitType] = useState<OrderUnitType>("Lbs");
   const [seedScheduleFilter, setSeedScheduleFilter] = useState<"Today" | "This Week" | "This Month" | "3 Months">("Today");
@@ -3085,6 +3095,81 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     }
   };
 
+  const handleQuickHarvest = async () => {
+    if (!qhRowNumber || !qhType) { setQhMessage("Please select a tower and harvest type."); return; }
+    const selected = activeInventory.find((r) => String(r.rowNumber) === qhRowNumber);
+    if (!selected) { setQhMessage("Tower not found."); return; }
+    const outputQty = toNumber(qhQty);
+    const podsWorked = toNumber(qhPods);
+    const harvestLbs = quantityToLbs(qhUnit, outputQty);
+    if (!outputQty) { setQhMessage("Please enter harvested quantity."); return; }
+    if (!podsWorked) { setQhMessage(qhType === "Trim Harvest" ? "Please enter pods trimmed." : "Please enter pods harvested."); return; }
+    const currentActivePods = toNumber(getInventoryActivePods(selected));
+    const currentRemainingLbs = toNumber(getInventoryRemainingExpectedLbs(selected));
+    const currentExpectedLbs = toNumber(getInventoryExpectedLbs(selected));
+    if (podsWorked > currentActivePods) { setQhMessage("Cannot harvest more pods than are active."); return; }
+    if (harvestLbs > currentRemainingLbs + 0.001) { setQhMessage("Harvested weight exceeds remaining harvestable lbs."); return; }
+    setQhSaving(true);
+    setQhMessage("");
+    try {
+      const isFullHarvest = qhType === "Full Harvest";
+      const newActivePods = isFullHarvest ? Math.max(0, currentActivePods - podsWorked) : currentActivePods;
+      const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - harvestLbs) * 100) / 100);
+      const isFinished = newActivePods <= 0 || newRemainingLbs <= 0.01;
+      const newStatus = isFinished ? "Harvested" : getInventoryStatus(selected) || "Active";
+      const newStage = isFinished ? "Harvested" : isFullHarvest ? "Ready" : "Trimmed";
+      const actionNote = [qhType, `${outputQty} ${getUnitLabel(qhUnit)}`, isFullHarvest ? `${podsWorked} pods harvested` : `${podsWorked} pods trimmed`, qhNote].filter(Boolean).join(" | ");
+
+      const actionResult = await postToBackend({
+        action: "saveStaffAction",
+        mode: "Harvest",
+        tower: getInventoryTower(selected),
+        crop: getInventoryCrop(selected),
+        lbs: harvestLbs,
+        podsChanged: isFullHarvest ? podsWorked : "",
+        status: isFinished ? "Completed" : "Partial",
+        stage: newStage,
+        date: formatDateInput(new Date()),
+        scrapType: "",
+        note: actionNote,
+      });
+      if (!actionResult.ok) { setQhMessage(actionResult.message || "Failed to log harvest."); setQhSaving(false); return; }
+
+      const updateResult = await postToBackend({
+        action: "updateProductionInventoryRow",
+        rowNumber: selected.rowNumber,
+        tower: getInventoryTower(selected),
+        towerType: getInventoryTowerType(selected),
+        maxPods: toNumber(getInventoryMaxPods(selected)),
+        activePods: newActivePods,
+        crop: getInventoryCrop(selected),
+        stage: newStage,
+        seededDate: getInventorySeededDate(selected),
+        transplantDate: getInventoryTransplantDate(selected),
+        estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
+        expectedLbs: currentExpectedLbs,
+        remainingExpectedLbs: newRemainingLbs,
+        status: newStatus,
+        notes: [getInventoryNotes(selected), actionNote].filter(Boolean).join(" | "),
+      });
+      if (!updateResult.ok) { setQhMessage(updateResult.message || "Harvest logged but inventory update failed."); setQhSaving(false); return; }
+
+      const crop = getInventoryCrop(selected);
+      setQhMessage(isFinished ? `Full harvest complete — ${crop} removed from active inventory.` : `${qhType} saved for ${crop}.`);
+      setQhRowNumber("");
+      setQhType(null);
+      setQhQty("");
+      setQhPods("");
+      setQhNote("");
+      await Promise.all([loadProductionInventory(), loadStaffActions()]);
+    } catch (err) {
+      console.error("handleQuickHarvest error:", err);
+      setQhMessage("Error saving harvest.");
+    } finally {
+      setQhSaving(false);
+    }
+  };
+
   const handleMarkPacked = async (task: {
     rowNumber: number;
     customer: string;
@@ -4482,6 +4567,116 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         </table>
       </TableScroll>
       </div>
+    </Panel>
+
+    <Panel title="Harvest a Tower">
+      {/* Step 1: pick a tower */}
+      <FormGrid columns={2}>
+        <Field label="Select Tower">
+          <select
+            value={qhRowNumber}
+            onChange={(e) => { setQhRowNumber(e.target.value); setQhType(null); setQhQty(""); setQhPods(""); setQhMessage(""); }}
+            style={inputStyle}
+          >
+            <option value="">— choose a tower —</option>
+            {activeInventory
+              .filter((item) => !!getInventoryTower(item) && normalizeStatus(getInventoryStage(item)) !== "seeded")
+              .slice()
+              .sort(sortInventoryByTowerLayout)
+              .map((item) => (
+                <option key={item.rowNumber} value={String(item.rowNumber)}>
+                  {getInventoryTower(item)} — {getInventoryCrop(item)} ({getInventoryStage(item)})
+                </option>
+              ))}
+          </select>
+        </Field>
+      </FormGrid>
+
+      {/* Step 2: show tower stats + harvest type buttons */}
+      {qhRowNumber && (() => {
+        const sel = activeInventory.find((r) => String(r.rowNumber) === qhRowNumber);
+        if (!sel) return null;
+        const activePods = toNumber(getInventoryActivePods(sel));
+        const remainingLbs = toNumber(getInventoryRemainingExpectedLbs(sel));
+        const expectedLbs = toNumber(getInventoryExpectedLbs(sel));
+        return (
+          <>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", margin: "12px 0", padding: "10px 14px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 14 }}>
+              <span><strong>Crop:</strong> {getInventoryCrop(sel)}</span>
+              <span><strong>Stage:</strong> {getInventoryStage(sel)}</span>
+              <span><strong>Active Pods:</strong> {activePods}</span>
+              <span><strong>Expected Lbs:</strong> {expectedLbs}</span>
+              <span><strong>Remaining Lbs:</strong> {remainingLbs}</span>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+              <button
+                onClick={() => { setQhType("Trim Harvest"); setQhQty(""); setQhPods(""); }}
+                style={qhType === "Trim Harvest"
+                  ? { ...primaryButtonStyle, background: "#0891b2" }
+                  : { ...secondaryButtonStyle, fontWeight: 600 }}
+              >
+                Trim Harvest
+              </button>
+              <button
+                onClick={() => { setQhType("Full Harvest"); setQhQty(""); setQhPods(String(activePods)); }}
+                style={qhType === "Full Harvest"
+                  ? { ...primaryButtonStyle, background: "#16a34a" }
+                  : { ...secondaryButtonStyle, fontWeight: 600 }}
+              >
+                Full Harvest
+              </button>
+            </div>
+
+            {/* Step 3: harvest details */}
+            {qhType && (
+              <>
+                <FormGrid columns={3}>
+                  <Field label="Qty Harvested">
+                    <input
+                      type="number"
+                      value={qhQty}
+                      onChange={(e) => setQhQty(e.target.value)}
+                      style={inputStyle}
+                      placeholder="e.g. 2.5"
+                      autoFocus
+                    />
+                  </Field>
+                  <Field label="Unit">
+                    <select value={qhUnit} onChange={(e) => setQhUnit(e.target.value as OrderUnitType)} style={inputStyle}>
+                      <option value="Lbs">Lbs</option>
+                      <option value="6oz Bag">6oz Bag</option>
+                      <option value="6oz Clamshell">6oz Clamshell</option>
+                      <option value="0.75oz Small Bag">0.75oz Small Bag</option>
+                      <option value="Plants">Plants</option>
+                    </select>
+                  </Field>
+                  <Field label={qhType === "Trim Harvest" ? "Pods Trimmed" : "Pods Harvested"}>
+                    <input
+                      type="number"
+                      value={qhPods}
+                      onChange={(e) => setQhPods(e.target.value)}
+                      style={inputStyle}
+                      placeholder={String(activePods)}
+                    />
+                  </Field>
+                  <Field label="Note (optional)">
+                    <input value={qhNote} onChange={(e) => setQhNote(e.target.value)} style={inputStyle} placeholder="Quality, issues, etc." />
+                  </Field>
+                </FormGrid>
+                <ActionRow message={qhMessage}>
+                  <button onClick={handleQuickHarvest} disabled={qhSaving} style={primaryButtonStyle}>
+                    {qhSaving ? "Saving…" : `Save ${qhType}`}
+                  </button>
+                  <button onClick={() => { setQhRowNumber(""); setQhType(null); setQhQty(""); setQhPods(""); setQhNote(""); setQhMessage(""); }} style={secondaryButtonStyle}>
+                    Clear
+                  </button>
+                </ActionRow>
+              </>
+            )}
+          </>
+        );
+      })()}
     </Panel>
 
     <Panel title="Ready to Harvest">
