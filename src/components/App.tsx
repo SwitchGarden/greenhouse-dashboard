@@ -132,9 +132,30 @@ const SIX_OZ_IN_LBS = 6 / 16;
 const SMALL_BAG_OZ_IN_LBS = 0.75 / 16;
 const MAX_TRIMS = 5;
 const TRIM_REGROWTH_DAYS = 21;
+const FULL_TRAY_SEEDS = 88;   // one full tray → 2 Low Density towers
+const HALF_TRAY_SEEDS = 44;   // one half tray → 1 Low Density tower
+
 const REPEAT_HARVEST_CROPS = new Set([
-  "arugula", "basil", "thai_basil", "mint", "chives", "kale", "parsley", "brassica"
+  "arugula", "basil", "thai_basil", "mint", "kale", "brassica",
+  "red_mizuna", "green_mizuna", "swiss_chard", "dill", "five_star", "wild_fire",
 ]);
+
+// Salad mix recipes: crop key → array of { crop (normalized key), oz per clamshell }
+const SALAD_MIX_RECIPES: Record<string, Array<{ crop: string; oz: number }>> = {
+  sunset_mix: [
+    { crop: "brassica", oz: 2 },
+    { crop: "red_mizuna", oz: 1 },
+    { crop: "green_mizuna", oz: 1 },
+    { crop: "swiss_chard", oz: 1 },
+    { crop: "oakleaf", oz: 1 },
+  ],
+  salad_mix: [
+    { crop: "brassica", oz: 2 },
+    { crop: "kale", oz: 1 },
+    { crop: "mizuna", oz: 1 },
+    { crop: "muir", oz: 2 },
+  ],
+};
 
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -191,6 +212,8 @@ const CROP_PROFILES: Record<
   swiss_chard: { expectedLbsPerTower: 3.52 },
   mizuna: { expectedLbsPerTower: 3.52 },
   wildfire: { expectedLbsPerTower: 5.5 },
+  sunset_mix: { expectedLbsPerTower: 0 },
+  salad_mix: { expectedLbsPerTower: 0 },
 };
 const normalizeCropKey = (crop: string = "") =>
   crop
@@ -213,6 +236,9 @@ const cropAliases: Record<string, string> = {
   five_star: "five_star",
   swisschard: "swiss_chard",
   swiss_chard: "swiss_chard",
+  wild_fire: "wildfire",
+  wildfire: "wildfire",
+  oak_leaf: "oakleaf",
 };
 const getCropProfile = (crop: string) => {
   const normalized = normalizeCropKey(crop);
@@ -499,9 +525,11 @@ const getInventoryHarvestType = (row: ProductionInventoryRow): string =>
   row.harvestType || row["Harvest Type"] || "";
 
 const getEffectiveHarvestType = (row: ProductionInventoryRow): "Full Harvest" | "Trim Harvest" => {
+  const cropName = getInventoryCrop(row);
+  if (!isRepeatHarvestCrop(cropName)) return "Full Harvest";
   const stored = getInventoryHarvestType(row);
-  if (stored === "Full Harvest" || stored === "Trim Harvest") return stored;
-  return isRepeatHarvestCrop(getInventoryCrop(row)) ? "Trim Harvest" : "Full Harvest";
+  if (stored === "Full Harvest") return "Full Harvest";
+  return "Trim Harvest";
 };
 
 export default function App() {
@@ -601,7 +629,7 @@ export default function App() {
 
   // Staff Daily action helpers
   const [dailyMessage, setDailyMessage] = useState("");
-  const [plantingTowerType, setPlantingTowerType] = useState<Record<string, string>>({});
+  const [plantingTrayType, setPlantingTrayType] = useState<Record<string, "Full Tray" | "Half Tray">>({});
   const [activeHarvestRowNumber, setActiveHarvestRowNumber] = useState("");
   const [harvestActionType, setHarvestActionType] = useState<"Full Harvest" | "Trim Harvest">("Full Harvest");
   const [harvestPodsValue, setHarvestPodsValue] = useState("");
@@ -1012,20 +1040,42 @@ const plantTodayTasks = useMemo(() => {
 
   const today = formatDateInput(new Date());
 
+  // Expand orders: salad mix orders become per-component crop demands
+  type OrderDemand = { cropKey: string; cropName: string; dueDate: string; qtyInLbs: number; customer: string };
+  const demands: OrderDemand[] = [];
   for (const order of openOrders) {
-    const cropName = (getOrderCrop(order) || "").trim() || "Unknown Crop";
+    const rawCrop = (getOrderCrop(order) || "").trim();
+    const normalized = normalizeCropKey(rawCrop);
+    const cropKey = cropAliases[normalized] || normalized;
     const dueDate = getOrderRequestedDeliveryDate(order);
     if (!dueDate) continue;
-
     const unitType = getOrderUnitType(order);
     const qtyNeeded = toNumber(getOrderQuantityNeeded(order));
-    const qtyNeededInLbs = quantityToLbs(unitType, qtyNeeded);
-    const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
+    const totalLbs = quantityToLbs(unitType, qtyNeeded);
+    const recipe = SALAD_MIX_RECIPES[cropKey];
+    if (recipe && totalLbs > 0) {
+      const totalRecipeOz = recipe.reduce((s, c) => s + c.oz, 0);
+      for (const { crop: compCrop, oz } of recipe) {
+        demands.push({
+          cropKey: compCrop,
+          cropName: formatCropLabel(compCrop),
+          dueDate,
+          qtyInLbs: Math.round(totalLbs * (oz / totalRecipeOz) * 1000) / 1000,
+          customer: `${getOrderCustomer(order)} (${formatCropLabel(cropKey)})`,
+        });
+      }
+    } else if (!recipe) {
+      demands.push({ cropKey, cropName: rawCrop, dueDate, qtyInLbs: totalLbs, customer: getOrderCustomer(order) });
+    }
+  }
+  demands.sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
+
+  for (const demand of demands) {
+    const { cropKey, cropName, dueDate, qtyInLbs, customer } = demand;
     const seedByDate = addDays(dueDate, -42);
 
-    const cropKey = cropName.toLowerCase();
     const pool =
-      cropPools.get(cropKey) || cropPools.get(cropName) || {
+      cropPools.get(cropKey) || {
         readyLbs: 0,
         readyPlants: 0,
         futureEntries: [] as Array<{ readyDate: string; lbs: number; plants: number }>,
@@ -1044,14 +1094,12 @@ const plantTodayTasks = useMemo(() => {
       }
     }
 
-    const shortageLbs = Math.max(0, qtyNeededInLbs - availableLbsByDue);
+    const shortageLbs = Math.max(0, qtyInLbs - availableLbsByDue);
+    const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropKey, HALF_TRAY_SEEDS));
     const newTowersNeeded = shortageLbs > 0 ? Math.ceil(shortageLbs / avgQtyPerTower) : 0;
 
-    const consumedLbs = Math.min(qtyNeededInLbs, availableLbsByDue);
-    const consumedPlants = Math.min(
-      unitType === "Plants" ? qtyNeeded : Math.round((consumedLbs * 16) / 6),
-      availablePlantsByDue
-    );
+    const consumedLbs = Math.min(qtyInLbs, availableLbsByDue);
+    const consumedPlants = Math.min(Math.round((consumedLbs * 16) / 6), availablePlantsByDue);
 
     pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
     pool.readyPlants = Math.max(0, availablePlantsByDue - consumedPlants);
@@ -1074,7 +1122,6 @@ const plantTodayTasks = useMemo(() => {
     const cropInventory = inventoryByCrop.get(cropName) || inventoryByCrop.get(cropKey);
     const urgency: "Overdue" | "Today" | "Upcoming" =
       seedByDate < today ? "Overdue" : seedByDate === today ? "Today" : "Upcoming";
-    // Collapse all overdue entries for the same crop into a single "seed today" group
     const effectiveSeedByDate = seedByDate < today ? today : seedByDate;
     const key = `${effectiveSeedByDate}__${cropKey}`;
 
@@ -1094,7 +1141,7 @@ const plantTodayTasks = useMemo(() => {
 
     current.totalTowers += newTowersNeeded;
     current.orderCount += 1;
-    current.orders.push(`${getOrderCustomer(order)} (${newTowersNeeded} towers)`);
+    current.orders.push(`${customer} (${newTowersNeeded} towers)`);
     if (!current.earliestDueDate || new Date(dueDate) < new Date(current.earliestDueDate)) {
       current.earliestDueDate = dueDate;
     }
@@ -2202,9 +2249,17 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     try {
       setDailyMessage("");
 
-      const selectedTowerType = plantingTowerType[task.crop] || "Low Density";
-      const maxPods = getTowerMaxPods(selectedTowerType);
-      const expectedLbs = calculateExpectedLbs(task.crop, maxPods, selectedTowerType);
+      const trayType = plantingTrayType[task.crop] || "Full Tray";
+      const maxPods = HALF_TRAY_SEEDS; // each tower slot = 44 pods (Low Density)
+      const expectedLbs = calculateExpectedLbs(task.crop, maxPods, "Low Density");
+
+      // Determine how many inventory rows to create
+      const fullTrays = trayType === "Full Tray" ? Math.ceil(task.totalTowers / 2) : 0;
+      const halfTrays = trayType === "Full Tray" ? 0 : task.totalTowers;
+      const towersToCreate = trayType === "Full Tray" ? fullTrays * 2 : task.totalTowers;
+      const trayNote = trayType === "Full Tray"
+        ? `${fullTrays} full tray${fullTrays !== 1 ? "s" : ""} (${towersToCreate} towers)`
+        : `${halfTrays} half tray${halfTrays !== 1 ? "s" : ""} (${task.totalTowers} towers)`;
 
       const matchingOrders = salesOrders
         .filter((order) => {
@@ -2224,12 +2279,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         tower: "",
         crop: task.crop,
         lbs: "",
-        podsChanged: maxPods * task.totalTowers,
+        podsChanged: maxPods * towersToCreate,
         status: "Completed",
         stage: "Seeded",
         date: formatDateInput(new Date()),
         scrapType: "",
-        note: `Planted ${task.totalTowers} towers for due date ${task.earliestDueDate || ""}. Tower Type: ${selectedTowerType}`,
+        note: `Planted ${trayNote} for due date ${task.earliestDueDate || ""}.`,
       });
 
       if (!actionResult.ok) {
@@ -2237,11 +2292,11 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         return;
       }
 
-      for (let i = 0; i < task.totalTowers; i += 1) {
+      for (let i = 0; i < towersToCreate; i += 1) {
         const invResult = await postToBackend({
           action: "saveProductionInventory",
           tower: "",
-          towerType: selectedTowerType,
+          towerType: "Low Density",
           maxPods,
           activePods: maxPods,
           crop: task.crop,
@@ -2252,7 +2307,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           expectedLbs,
           remainingExpectedLbs: expectedLbs,
           status: "Active",
-          notes: `Created from Plant Today task. Due by ${task.earliestDueDate || ""}`,
+          notes: `Created from Plant Today task: ${trayNote}. Due by ${task.earliestDueDate || ""}`,
         });
 
         if (!invResult.ok) {
@@ -3633,14 +3688,14 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <th style={thStyle}>Seed By</th>
               <th style={thStyle}>Status</th>
               <th style={thStyle}>Crop</th>
-              <th style={thStyle}>Towers to Seed</th>
+              <th style={thStyle}>Trays Needed</th>
               <th style={thStyle}>Ready By</th>
               <th style={thStyle}>Available Lbs</th>
               <th style={thStyle}>Available Plants</th>
               <th style={thStyle}>Seeded</th>
               <th style={thStyle}>Pipeline</th>
               <th style={thStyle}>Orders</th>
-              <th style={thStyle}>Tower Type</th>
+              <th style={thStyle}>Tray Type</th>
               <th style={thStyle}>Action</th>
             </tr>
           </thead>
@@ -3659,7 +3714,15 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   <td style={tdStyle}>{formatDateDisplay(displaySeedByDate)}</td>
                   <td style={tdStyle}>{task.urgency}</td>
                   <td style={tdStyle}>{task.crop}</td>
-                  <td style={tdStyle}>{task.totalTowers}</td>
+                  <td style={tdStyle}>
+                    {(() => {
+                      const full = Math.floor(task.totalTowers / 2);
+                      const half = task.totalTowers % 2;
+                      if (full > 0 && half > 0) return `${full} full + 1 half`;
+                      if (full > 0) return `${full} full`;
+                      return `${half} half`;
+                    })()}
+                  </td>
                   <td style={tdStyle}>{formatDateDisplay(task.earliestDueDate)}</td>
                   <td style={tdStyle}>{Math.round(task.currentAvailableLbs * 100) / 100}</td>
                   <td style={tdStyle}>{task.currentAvailablePlants}</td>
