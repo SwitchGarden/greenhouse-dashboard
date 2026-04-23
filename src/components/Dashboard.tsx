@@ -2,7 +2,6 @@ import React from "react";
 import type {
   SalesOrderRow,
   DraftOrderLine,
-  OrderUnitType,
   SalesPlannerResult,
   StaffActionRow,
 } from "../lib/types";
@@ -111,9 +110,6 @@ export type DashboardProps = {
   uniqueCustomers: string[];
 
   salesCustomer: string;
-  salesCrop: string;
-  salesUnitType: OrderUnitType;
-  salesQuantityNeeded: string;
   salesNotes: string;
   salesPlanner: SalesPlannerResult;
   salesOrderType: "One-Time" | "Contract";
@@ -137,9 +133,6 @@ export type DashboardProps = {
   filterTower: string;
 
   setSalesCustomer: (v: string) => void;
-  setSalesCrop: (v: string) => void;
-  setSalesUnitType: (v: OrderUnitType) => void;
-  setSalesQuantityNeeded: (v: string) => void;
   setSalesNotes: (v: string) => void;
   setSalesOrderType: (v: "One-Time" | "Contract") => void;
   setSalesFrequency: (v: string) => void;
@@ -155,7 +148,8 @@ export type DashboardProps = {
   setFilterCrop: (v: string) => void;
   setFilterTower: (v: string) => void;
 
-  addCurrentLineToBatch: () => void;
+  updateDraftOrderLine: (id: string, field: "crop" | "unitType" | "quantityNeeded", value: string) => void;
+  addDraftOrderRow: () => void;
   cancelEditSalesOrder: () => void;
   handleSaveOrder: () => void;
   handleOrderStatusChange: (rowNumber: number, status: string) => void;
@@ -177,9 +171,6 @@ export function Dashboard({
   uniqueOrderStatuses,
   uniqueCustomers,
   salesCustomer,
-  salesCrop,
-  salesUnitType,
-  salesQuantityNeeded,
   salesNotes,
   salesPlanner,
   salesOrderType,
@@ -200,9 +191,6 @@ export function Dashboard({
   filterCrop,
   filterTower,
   setSalesCustomer,
-  setSalesCrop,
-  setSalesUnitType,
-  setSalesQuantityNeeded,
   setSalesNotes,
   setSalesOrderType,
   setSalesFrequency,
@@ -217,7 +205,8 @@ export function Dashboard({
   setFilterMode,
   setFilterCrop,
   setFilterTower,
-  addCurrentLineToBatch,
+  updateDraftOrderLine,
+  addDraftOrderRow,
   cancelEditSalesOrder,
   handleSaveOrder,
   handleOrderStatusChange,
@@ -288,36 +277,11 @@ export function Dashboard({
               <input value={salesCustomer} onChange={(e) => setSalesCustomer(e.target.value)} style={inputStyle} />
             </Field>
 
-            <Field label="Current Crop Line">
-              <select value={salesCrop} onChange={(e) => setSalesCrop(e.target.value)} style={inputStyle}>
-                <option value="">Select Crop</option>
-                {uniqueCrops.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
             <Field label="Order Type">
               <select value={salesOrderType} onChange={(e) => setSalesOrderType(e.target.value as "One-Time" | "Contract")} style={inputStyle}>
                 <option value="One-Time">One-Time</option>
                 <option value="Contract">Contract</option>
               </select>
-            </Field>
-
-            <Field label="Unit Type">
-              <select value={salesUnitType} onChange={(e) => setSalesUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
-                <option value="Lbs">Lbs</option>
-                <option value="Plants">Plants</option>
-                <option value="6oz Bag">6oz Bag</option>
-                <option value="6oz Clamshell">6oz Clamshell</option>
-                <option value="0.75oz Small Bag">0.75oz Small Bag</option>
-              </select>
-            </Field>
-
-            <Field label={salesUnitType === "Plants" ? "Plants Needed" : salesUnitType === "Lbs" ? "Lbs Needed" : `Qty ${salesUnitType}`}>
-              <input value={salesQuantityNeeded} onChange={(e) => setSalesQuantityNeeded(e.target.value)} style={inputStyle} />
             </Field>
 
             {salesOrderType === "One-Time" ? (
@@ -345,14 +309,88 @@ export function Dashboard({
             )}
           </FormGrid>
 
+          <div style={{ marginBottom: 8 }}>
+            <TableScroll>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Crop</th>
+                    <th style={thStyle}>Unit</th>
+                    <th style={thStyle}>Qty</th>
+                    <th style={thStyle}>Approx Lbs</th>
+                    <th style={thStyle}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {draftOrderLines.map((line) => (
+                    <tr key={line.id}>
+                      <td style={tdStyle}>
+                        <select
+                          value={line.crop}
+                          onChange={(e) => updateDraftOrderLine(line.id, "crop", e.target.value)}
+                          style={compactInputStyle}
+                        >
+                          <option value="">Select Crop</option>
+                          {uniqueCrops.map((item) => (
+                            <option key={item} value={item}>{item}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={tdStyle}>
+                        <select
+                          value={line.unitType}
+                          onChange={(e) => updateDraftOrderLine(line.id, "unitType", e.target.value)}
+                          style={compactInputStyle}
+                        >
+                          <option value="Lbs">Lbs</option>
+                          <option value="Plants">Plants</option>
+                          <option value="6oz Bag">6oz Bag</option>
+                          <option value="6oz Clamshell">6oz Clamshell</option>
+                          <option value="0.75oz Small Bag">0.75oz Small Bag</option>
+                        </select>
+                      </td>
+                      <td style={tdStyle}>
+                        <input
+                          type="number"
+                          min="0"
+                          value={line.quantityNeeded}
+                          onChange={(e) => updateDraftOrderLine(line.id, "quantityNeeded", e.target.value)}
+                          style={{ ...compactInputStyle, width: 80 }}
+                          placeholder="0"
+                        />
+                      </td>
+                      <td style={tdStyle}>{quantityToLbs(line.unitType, toNumber(line.quantityNeeded))}</td>
+                      <td style={tdStyle}>
+                        {draftOrderLines.length > 1 && (
+                          <button
+                            onClick={() => removeDraftOrderLine(line.id)}
+                            style={{ ...secondaryButtonStyle, padding: "4px 8px" }}
+                            aria-label="Remove row"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
+            {!editingSalesOrderRowNumber && (
+              <button onClick={addDraftOrderRow} style={{ ...secondaryButtonStyle, marginTop: 6 }}>
+                + Add Row
+              </button>
+            )}
+          </div>
+
           <Field label="Notes">
             <textarea value={salesNotes} onChange={(e) => setSalesNotes(e.target.value)} style={textareaStyle} />
           </Field>
 
           <MetricGrid>
-            <MiniMetric label={`Available ${salesPlanner.unitLabel}`} value={salesPlanner.availableQty} />
-            <MiniMetric label={`Shortage ${salesPlanner.unitLabel}`} value={salesPlanner.shortageQty} />
-            <MiniMetric label="Current Line Lbs" value={salesPlanner.qtyNeededInLbs} />
+            <MiniMetric label="Available Lbs" value={salesPlanner.availableQty} />
+            <MiniMetric label="Shortage Lbs" value={salesPlanner.shortageQty} />
+            <MiniMetric label="Total Order Lbs" value={salesPlanner.qtyNeededInLbs} />
             <MiniMetric label="Towers Needed" value={salesPlanner.towersNeeded} />
             <MiniMetric label="Pipeline Towers" value={salesPlanner.pipelineTowers} />
             <MiniMetric label="New Towers To Plant" value={salesPlanner.newTowersToPlant} />
@@ -363,48 +401,12 @@ export function Dashboard({
             <MiniMetric label="Feasible" value={salesPlanner.deliveryFeasible ? "Yes" : salesPlanner.shortageQty > 0 ? "No" : "-"} />
           </MetricGrid>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-            {!editingSalesOrderRowNumber && (
-              <button onClick={addCurrentLineToBatch} style={secondaryButtonStyle}>
-                Add Line Item
-              </button>
-            )}
-            {editingSalesOrderRowNumber ? (
+          {editingSalesOrderRowNumber && (
+            <div style={{ marginBottom: 14 }}>
               <button onClick={cancelEditSalesOrder} style={secondaryButtonStyle}>
                 Cancel Edit
               </button>
-            ) : null}
-          </div>
-
-          {(draftOrderLines.length > 0 || editingSalesOrderRowNumber) && (
-            <TableScroll>
-              <table style={tableStyle}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Crop</th>
-                    <th style={thStyle}>Unit</th>
-                    <th style={thStyle}>Qty</th>
-                    <th style={thStyle}>Approx Lbs</th>
-                    {!editingSalesOrderRowNumber && <th style={thStyle}>Action</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {draftOrderLines.map((line) => (
-                    <tr key={line.id}>
-                      <td style={tdStyle}>{line.crop}</td>
-                      <td style={tdStyle}>{line.unitType}</td>
-                      <td style={tdStyle}>{line.quantityNeeded}</td>
-                      <td style={tdStyle}>{quantityToLbs(line.unitType, toNumber(line.quantityNeeded))}</td>
-                      {!editingSalesOrderRowNumber && (
-                        <td style={tdStyle}>
-                          <button onClick={() => removeDraftOrderLine(line.id)} style={secondaryButtonStyle}>Remove</button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableScroll>
+            </div>
           )}
 
           <ActionRow message={salesSaveMessage}>
