@@ -269,81 +269,6 @@ export function Dashboard({
           </div>
         </Panel>
 
-        <Panel title="Short Orders / Planting Pressure">
-          <TableScroll>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Customer</th>
-                  <th style={thStyle}>Crop</th>
-                  <th style={thStyle}>Due Date</th>
-                  <th style={thStyle}>Shortage Qty</th>
-                  <th style={thStyle}>New Towers</th>
-                  <th style={thStyle}>Status</th>
-                  <th style={thStyle}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shortageAlerts.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} style={tdStyle}>No shortage warnings right now.</td>
-                  </tr>
-                ) : (
-                  shortageAlerts.slice(0, 10).map((item) => (
-                    <tr key={item.rowNumber}>
-                      <td style={tdStyle}>{item.customer}</td>
-                      <td style={tdStyle}>{item.crop}</td>
-                      <td style={tdStyle}>{formatDateDisplay(item.dueDate)}</td>
-                      <td style={tdStyle}>{item.shortageQty}</td>
-                      <td style={tdStyle}>{item.newTowers}</td>
-                      <td style={tdStyle}>{item.status}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </TableScroll>
-        </Panel>
-      </ResponsiveTwoPanelGrid>
-
-      <ResponsiveTwoPanelGrid>
-        <Panel title="Seeding Calendar">
-          <TableScroll>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Seed Week</th>
-                  <th style={thStyle}>Crop</th>
-                  <th style={thStyle}>Towers</th>
-                  <th style={thStyle}>Seed By</th>
-                  <th style={thStyle}>Ready By</th>
-                  <th style={thStyle}>Orders</th>
-                </tr>
-              </thead>
-              <tbody>
-                {seedingCalendar.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} style={tdStyle}>No seeding needed yet.</td>
-                  </tr>
-                ) : (
-                  seedingCalendar.flatMap(([weekOf, items]) =>
-                    items.map((item, index) => (
-                      <tr key={`${weekOf}-${item.crop}-${item.seedByDate}`}>
-                        <td style={tdStyle}>{index === 0 ? formatDateDisplay(weekOf) : ""}</td>
-                        <td style={tdStyle}>{item.crop}</td>
-                        <td style={tdStyle}>{item.towers}</td>
-                        <td style={tdStyle}>{formatDateDisplay(item.seedByDate)}</td>
-                        <td style={tdStyle}>{formatDateDisplay(item.firstDueDate)}</td>
-                        <td style={tdStyle}>{item.orders}</td>
-                      </tr>
-                    ))
-                  )
-                )}
-              </tbody>
-            </table>
-          </TableScroll>
-        </Panel>
-
         <Panel title="Sales Planner / Order Planner">
           <FormGrid columns={2}>
             <Field label="Customer">
@@ -475,83 +400,6 @@ export function Dashboard({
       </ResponsiveTwoPanelGrid>
 
       <div style={sectionStackStyle}>
-        <Panel title="Recent Activity">
-          <FormGrid columns={3}>
-            <Field label="Mode Filter">
-              <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} style={inputStyle}>
-                <option value="All">All</option>
-                {uniqueModes.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Crop Filter">
-              <select value={filterCrop} onChange={(e) => setFilterCrop(e.target.value)} style={inputStyle}>
-                <option value="All">All</option>
-                {uniqueCrops.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Tower Filter">
-              <select value={filterTower} onChange={(e) => setFilterTower(e.target.value)} style={inputStyle}>
-                <option value="All">All</option>
-                {uniqueTowers.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </FormGrid>
-
-          <div style={{ maxHeight: 420, overflowY: "auto", overflowX: "auto" }}>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Time</th>
-                  <th style={thStyle}>Mode</th>
-                  <th style={thStyle}>Tower</th>
-                  <th style={thStyle}>Crop</th>
-                  <th style={thStyle}>Lbs</th>
-                  <th style={thStyle}>Pods</th>
-                  <th style={thStyle}>Note</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRecentActivity.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} style={tdStyle}>
-                      No recent activity.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredRecentActivity.slice(0, 10).map((row) => (
-                    <tr key={row.rowNumber}>
-                      <td style={tdStyle}>{formatDateTimeDisplay(getStaffTimestamp(row))}</td>
-                      <td style={tdStyle}>{getStaffMode(row)}</td>
-                      <td style={tdStyle}>{getStaffTower(row)}</td>
-                      <td style={tdStyle}>{getStaffCrop(row)}</td>
-                      <td style={tdStyle}>{getStaffLbs(row)}</td>
-                      <td style={tdStyle}>{getStaffPodsChanged(row)}</td>
-                      <td style={tdStyle}>{getStaffNote(row)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-            Showing 10 most recent entries.
-          </div>
-        </Panel>
-
         <Panel title="Saved Orders">
           <FormGrid columns={4}>
             <Field label="Status Filter">
@@ -682,6 +530,160 @@ export function Dashboard({
           </div>
           <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
             Orders marked Completed or Cancelled are removed from this section. Recurring orders stay visible for future dates until each occurrence is completed.
+          </div>
+        </Panel>
+      </div>
+
+      <ResponsiveTwoPanelGrid>
+        <Panel title="Short Orders / Planting Pressure">
+          <TableScroll>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Customer</th>
+                  <th style={thStyle}>Crop</th>
+                  <th style={thStyle}>Due Date</th>
+                  <th style={thStyle}>Shortage Qty</th>
+                  <th style={thStyle}>New Towers</th>
+                  <th style={thStyle}>Status</th>
+                  <th style={thStyle}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shortageAlerts.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={tdStyle}>No shortage warnings right now.</td>
+                  </tr>
+                ) : (
+                  shortageAlerts.slice(0, 10).map((item) => (
+                    <tr key={item.rowNumber}>
+                      <td style={tdStyle}>{item.customer}</td>
+                      <td style={tdStyle}>{item.crop}</td>
+                      <td style={tdStyle}>{formatDateDisplay(item.dueDate)}</td>
+                      <td style={tdStyle}>{item.shortageQty}</td>
+                      <td style={tdStyle}>{item.newTowers}</td>
+                      <td style={tdStyle}>{item.status}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </TableScroll>
+        </Panel>
+
+        <Panel title="Seeding Calendar">
+          <TableScroll>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Seed Week</th>
+                  <th style={thStyle}>Crop</th>
+                  <th style={thStyle}>Towers</th>
+                  <th style={thStyle}>Seed By</th>
+                  <th style={thStyle}>Ready By</th>
+                  <th style={thStyle}>Orders</th>
+                </tr>
+              </thead>
+              <tbody>
+                {seedingCalendar.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} style={tdStyle}>No seeding needed yet.</td>
+                  </tr>
+                ) : (
+                  seedingCalendar.flatMap(([weekOf, items]) =>
+                    items.map((item, index) => (
+                      <tr key={`${weekOf}-${item.crop}-${item.seedByDate}`}>
+                        <td style={tdStyle}>{index === 0 ? formatDateDisplay(weekOf) : ""}</td>
+                        <td style={tdStyle}>{item.crop}</td>
+                        <td style={tdStyle}>{item.towers}</td>
+                        <td style={tdStyle}>{formatDateDisplay(item.seedByDate)}</td>
+                        <td style={tdStyle}>{formatDateDisplay(item.firstDueDate)}</td>
+                        <td style={tdStyle}>{item.orders}</td>
+                      </tr>
+                    ))
+                  )
+                )}
+              </tbody>
+            </table>
+          </TableScroll>
+        </Panel>
+      </ResponsiveTwoPanelGrid>
+
+      <div style={sectionStackStyle}>
+        <Panel title="Recent Activity">
+          <FormGrid columns={3}>
+            <Field label="Mode Filter">
+              <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} style={inputStyle}>
+                <option value="All">All</option>
+                {uniqueModes.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Crop Filter">
+              <select value={filterCrop} onChange={(e) => setFilterCrop(e.target.value)} style={inputStyle}>
+                <option value="All">All</option>
+                {uniqueCrops.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Tower Filter">
+              <select value={filterTower} onChange={(e) => setFilterTower(e.target.value)} style={inputStyle}>
+                <option value="All">All</option>
+                {uniqueTowers.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </FormGrid>
+
+          <div style={{ maxHeight: 420, overflowY: "auto", overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Time</th>
+                  <th style={thStyle}>Mode</th>
+                  <th style={thStyle}>Tower</th>
+                  <th style={thStyle}>Crop</th>
+                  <th style={thStyle}>Lbs</th>
+                  <th style={thStyle}>Pods</th>
+                  <th style={thStyle}>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRecentActivity.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={tdStyle}>
+                      No recent activity.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRecentActivity.slice(0, 10).map((row) => (
+                    <tr key={row.rowNumber}>
+                      <td style={tdStyle}>{formatDateTimeDisplay(getStaffTimestamp(row))}</td>
+                      <td style={tdStyle}>{getStaffMode(row)}</td>
+                      <td style={tdStyle}>{getStaffTower(row)}</td>
+                      <td style={tdStyle}>{getStaffCrop(row)}</td>
+                      <td style={tdStyle}>{getStaffLbs(row)}</td>
+                      <td style={tdStyle}>{getStaffPodsChanged(row)}</td>
+                      <td style={tdStyle}>{getStaffNote(row)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+            Showing 10 most recent entries.
           </div>
         </Panel>
       </div>
