@@ -1339,11 +1339,15 @@ const plantTodayTasks = useMemo(() => {
 
     cropPools.set(cropKey, pool);
 
-    if (newTowersNeeded <= 0 || !seedByDate) continue;
+    if (!seedByDate) continue;
 
     const seededCount = activeInventory.filter(
       (item) => (getInventoryCrop(item) || "").trim().toLowerCase() === cropKey && normalizeStatus(getInventoryStage(item)) === "seeded"
     ).length;
+
+    // Seeded inventory is already in the pipeline — subtract it from the remaining shortage
+    const remainingTowersNeeded = Math.max(0, newTowersNeeded - seededCount);
+    if (remainingTowersNeeded <= 0) continue;
 
     const pipelineCount = activeInventory.filter(
       (item) =>
@@ -1372,9 +1376,9 @@ const plantTodayTasks = useMemo(() => {
       urgency,
     };
 
-    current.totalTowers += newTowersNeeded;
+    current.totalTowers += remainingTowersNeeded;
     current.orderCount += 1;
-    current.orders.push(`${customer} (${newTowersNeeded} towers)`);
+    current.orders.push(`${customer} (${remainingTowersNeeded} towers)`);
     if (!current.earliestDueDate || new Date(dueDate) < new Date(current.earliestDueDate)) {
       current.earliestDueDate = dueDate;
     }
@@ -2559,13 +2563,13 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       const maxPods = HALF_TRAY_SEEDS; // each tower slot = 44 pods (Low Density)
       const expectedLbs = calculateExpectedLbs(task.crop, maxPods, "Low Density");
 
-      // Determine how many inventory rows to create
+      // Determine how many inventory rows to create — always one per tower needed
       const fullTrays = trayType === "Full Tray" ? Math.ceil(task.totalTowers / 2) : 0;
       const halfTrays = trayType === "Full Tray" ? 0 : task.totalTowers;
-      const towersToCreate = trayType === "Full Tray" ? fullTrays * 2 : task.totalTowers;
+      const towersToCreate = task.totalTowers;
       const trayNote = trayType === "Full Tray"
         ? `${fullTrays} full tray${fullTrays !== 1 ? "s" : ""} (${towersToCreate} towers)`
-        : `${halfTrays} half tray${halfTrays !== 1 ? "s" : ""} (${task.totalTowers} towers)`;
+        : `${halfTrays} half tray${halfTrays !== 1 ? "s" : ""} (${towersToCreate} towers)`;
 
       const matchingOrders = salesOrders
         .filter((order) => {
