@@ -750,6 +750,12 @@ export default function App() {
   const [seededEditActivePods, setSeededEditActivePods] = useState("");
   const [seededEditMessage, setSeededEditMessage] = useState("");
   const [seededEditSaving, setSeededEditSaving] = useState(false);
+  const [seededTransplantRowNumber, setSeededTransplantRowNumber] = useState<number | null>(null);
+  const [seededTransplantTower, setSeededTransplantTower] = useState("");
+  const [seededTransplantTowerType, setSeededTransplantTowerType] = useState("Low Density");
+  const [seededTransplantDate, setSeededTransplantDate] = useState(formatDateInput(new Date()));
+  const [seededTransplantMessage, setSeededTransplantMessage] = useState("");
+  const [seededTransplantSaving, setSeededTransplantSaving] = useState(false);
 
   const [marketConfig, setMarketConfig] = useState<FarmersMarketConfig>(() => {
     try {
@@ -1455,31 +1461,45 @@ const plantTodayTasks = useMemo(() => {
 
 
 const filteredPlantTodayTasks = useMemo(() => {
-  const today = new Date(formatDateInput(new Date()));
-  const weekEnd = getEndOfWeek(today);
-  const monthEnd = new Date(today);
-  monthEnd.setMonth(monthEnd.getMonth() + 1);
-  const threeMonthEnd = new Date(today);
-  threeMonthEnd.setMonth(threeMonthEnd.getMonth() + 3);
+  const todayStr = formatDateInput(new Date());
+  const todayDate = new Date(todayStr + "T12:00:00");
+  const weekEnd = getEndOfWeek(new Date(todayStr + "T12:00:00"));
+  const monthEnd = new Date(todayDate); monthEnd.setMonth(monthEnd.getMonth() + 1);
+  const threeMonthEnd = new Date(todayDate); threeMonthEnd.setMonth(threeMonthEnd.getMonth() + 3);
 
-  const normalizeSeedDate = (seedByDate: string) => {
-    const parsed = new Date(seedByDate || today.toISOString());
-    if (parsed < today) return new Date(today);
-    return parsed;
+  // Round a date up to the next (or current) Wednesday
+  const toNextWednesday = (dateStr: string): string => {
+    const base = dateStr < todayStr ? todayStr : dateStr;
+    const dow = new Date(base + "T12:00:00").getDay();
+    const daysUntil = (3 - dow + 7) % 7;
+    return addDays(base, daysUntil);
   };
 
-  return plantTodayTasks.filter((task) => {
-    const compareDate = normalizeSeedDate(task.seedByDate);
-    if (seedScheduleFilter === "Today") {
-      return compareDate.toDateString() === today.toDateString();
+  // Merge tasks that share the same crop + mapped Wednesday
+  type MergedTask = (typeof plantTodayTasks)[0] & { mappedWednesday: string };
+  const mergedMap = new Map<string, MergedTask>();
+  for (const task of plantTodayTasks) {
+    const wed = toNextWednesday(task.seedByDate);
+    const key = `${wed}__${task.crop}`;
+    const existing = mergedMap.get(key);
+    if (existing) {
+      existing.totalTowers += task.totalTowers;
+      existing.orderCount += task.orderCount;
+      existing.orders.push(...task.orders);
+      if (task.earliestDueDate && (!existing.earliestDueDate || task.earliestDueDate < existing.earliestDueDate)) {
+        existing.earliestDueDate = task.earliestDueDate;
+      }
+    } else {
+      mergedMap.set(key, { ...task, seedByDate: wed, mappedWednesday: wed });
     }
-    if (seedScheduleFilter === "This Week") {
-      return compareDate >= today && compareDate <= weekEnd;
-    }
-    if (seedScheduleFilter === "3 Months") {
-      return compareDate >= today && compareDate <= threeMonthEnd;
-    }
-    return compareDate >= today && compareDate <= monthEnd;
+  }
+
+  return Array.from(mergedMap.values()).filter((task) => {
+    const wedDate = new Date(task.mappedWednesday + "T12:00:00");
+    if (seedScheduleFilter === "Today") return task.mappedWednesday === todayStr;
+    if (seedScheduleFilter === "This Week") return wedDate >= todayDate && wedDate <= weekEnd;
+    if (seedScheduleFilter === "3 Months") return wedDate >= todayDate && wedDate <= threeMonthEnd;
+    return wedDate >= todayDate && wedDate <= monthEnd;
   });
 }, [plantTodayTasks, seedScheduleFilter]);
 
@@ -2715,6 +2735,44 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     setSeededEditCrop("");
     setSeededEditActivePods("");
     setSeededEditMessage("");
+  };
+
+  const handleTransplantSeeded = async () => {
+    if (!seededTransplantRowNumber || !seededTransplantTower) {
+      setSeededTransplantMessage("Please enter a tower name.");
+      return;
+    }
+    setSeededTransplantSaving(true);
+    setSeededTransplantMessage("");
+    try {
+      const maxPods = getTowerMaxPods(seededTransplantTowerType);
+      const result = await postToBackend({
+        action: "updateProductionInventoryRow",
+        rowNumber: seededTransplantRowNumber,
+        tower: seededTransplantTower,
+        towerType: seededTransplantTowerType,
+        maxPods,
+        activePods: maxPods,
+        stage: "Transplanted",
+        transplantDate: seededTransplantDate,
+        estimatedReadyDate: addDays(seededTransplantDate, 21),
+      });
+      if (result.ok) {
+        setSeededTransplantRowNumber(null);
+        setSeededTransplantTower("");
+        setSeededTransplantTowerType("Low Density");
+        setSeededTransplantDate(formatDateInput(new Date()));
+        setSeededTransplantMessage("");
+        await loadProductionInventory();
+      } else {
+        setSeededTransplantMessage(result.message || "Unable to save transplant.");
+      }
+    } catch (error) {
+      console.error("handleTransplantSeeded error:", error);
+      setSeededTransplantMessage("Error saving transplant.");
+    } finally {
+      setSeededTransplantSaving(false);
+    }
   };
 
   const handleSaveSeededEdit = async () => {
@@ -4228,18 +4286,17 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         </div>
       </div>
       {(() => {
-        const todayDow = new Date().getDay(); // 0=Sun, 3=Wed
-        const daysUntilWed = (3 - todayDow + 7) % 7 || 7;
+        const todayDow = new Date().getDay();
+        const daysUntilWed = (3 - todayDow + 7) % 7;
         const nextWed = addDays(formatDateInput(new Date()), daysUntilWed);
-        if (seedScheduleFilter === "Today" && todayDow !== 3) {
-          return (
-            <div style={{ padding: "16px 0", color: "#64748b", fontSize: 14 }}>
-              Seeding day is <strong>Wednesday</strong>. Next seeding: <strong>{formatDateDisplay(nextWed)}</strong>.
-              Switch the filter to <em>This Week</em> or wider to preview upcoming tasks.
-            </div>
-          );
-        }
-        return null;
+        return (
+          <div style={{ fontSize: 13, color: "#64748b", marginBottom: 8 }}>
+            {todayDow === 3
+              ? <span>Today is seeding day — tasks shown below.</span>
+              : <span>Seeding day is <strong>Wednesday</strong>. Next seeding: <strong>{formatDateDisplay(nextWed)}</strong>. Use <em>This Month</em> or wider to preview upcoming tasks.</span>
+            }
+          </div>
+        );
       })()}
       <TableScroll>
         <table style={tableStyle}>
@@ -4263,15 +4320,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           </thead>
           <tbody>
             {(() => {
-              const isWednesdayOnly = seedScheduleFilter === "Today" && new Date().getDay() !== 3;
               const visibleTasks = filteredPlantTodayTasks.filter((t) => !dismissedSeedTasks.has(`${t.seedByDate}__${t.crop}`));
-              if (isWednesdayOnly) return <tr><td colSpan={14} style={tdStyle}></td></tr>;
-              if (visibleTasks.length === 0) return <tr><td colSpan={14} style={tdStyle}>No seeding tasks right now.</td></tr>;
+              if (visibleTasks.length === 0) return <tr><td colSpan={14} style={tdStyle}>No seeding tasks for this period.</td></tr>;
               return visibleTasks.map((task) => {
-                const displaySeedByDate = task.seedByDate && task.seedByDate < formatDateInput(new Date()) ? formatDateInput(new Date()) : task.seedByDate;
                 return (
                 <tr key={`${task.seedByDate}-${task.crop}`}>
-                  <td style={tdStyle}>{formatDateDisplay(displaySeedByDate)}</td>
+                  <td style={tdStyle}>{formatDateDisplay(task.seedByDate)}</td>
                   <td style={tdStyle}>{task.urgency}</td>
                   <td style={tdStyle}>{task.crop}</td>
                   <td style={tdStyle}>
@@ -4417,35 +4471,86 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     </tr>
                   );
                 }
+                const isTransplanting = seededTransplantRowNumber === item.rowNumber;
                 return (
-                  <tr key={item.rowNumber}>
-                    <td style={tdStyle}>{getInventoryTower(item) || "-"}</td>
-                    <td style={tdStyle}>{getInventoryTowerType(item)}</td>
-                    <td style={tdStyle}>{getInventoryCrop(item)}</td>
-                    <td style={tdStyle}>{getInventoryActivePods(item)}</td>
-                    <td style={tdStyle}>{formatDateDisplay(getInventorySeededDate(item))}</td>
-                    <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
-                    <td style={tdStyle}>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          onClick={() => startEditSeededEntry(item)}
-                          style={secondaryButtonStyle}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (window.confirm("Delete this seeded entry?")) {
-                              handleDeleteSeededEntry(item.rowNumber);
-                            }
-                          }}
-                          style={{ ...secondaryButtonStyle, color: "#dc2626", borderColor: "#fca5a5" }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                  <React.Fragment key={item.rowNumber}>
+                    <tr>
+                      <td style={tdStyle}>{getInventoryTower(item) || "-"}</td>
+                      <td style={tdStyle}>{getInventoryTowerType(item)}</td>
+                      <td style={tdStyle}>{getInventoryCrop(item)}</td>
+                      <td style={tdStyle}>{getInventoryActivePods(item)}</td>
+                      <td style={tdStyle}>{formatDateDisplay(getInventorySeededDate(item))}</td>
+                      <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
+                      <td style={tdStyle}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button
+                            onClick={() => {
+                              setSeededTransplantRowNumber(isTransplanting ? null : item.rowNumber);
+                              setSeededTransplantTower("");
+                              setSeededTransplantTowerType("Low Density");
+                              setSeededTransplantDate(formatDateInput(new Date()));
+                              setSeededTransplantMessage("");
+                              cancelEditSeededEntry();
+                            }}
+                            style={{ ...primaryButtonStyle, background: isTransplanting ? "#64748b" : undefined }}
+                          >
+                            Transplant
+                          </button>
+                          <button onClick={() => { startEditSeededEntry(item); setSeededTransplantRowNumber(null); }} style={secondaryButtonStyle}>Edit</button>
+                          <button
+                            onClick={() => { if (window.confirm("Delete this seeded entry?")) handleDeleteSeededEntry(item.rowNumber); }}
+                            style={{ ...secondaryButtonStyle, color: "#dc2626", borderColor: "#fca5a5" }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {isTransplanting && (
+                      <tr style={{ background: "#f0fdf4" }}>
+                        <td colSpan={7} style={{ ...tdStyle, paddingTop: 10, paddingBottom: 10 }}>
+                          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                            <label style={{ fontSize: 13 }}>Tower:
+                              <input
+                                value={seededTransplantTower}
+                                onChange={(e) => setSeededTransplantTower(e.target.value)}
+                                style={{ ...compactInputStyle, width: 70, marginLeft: 6 }}
+                                placeholder="R1"
+                                autoFocus
+                              />
+                            </label>
+                            <label style={{ fontSize: 13 }}>Type:
+                              <select
+                                value={seededTransplantTowerType}
+                                onChange={(e) => setSeededTransplantTowerType(e.target.value)}
+                                style={{ ...compactInputStyle, marginLeft: 6 }}
+                              >
+                                <option value="Low Density">Low Density (44)</option>
+                                <option value="High Density">High Density (160)</option>
+                              </select>
+                            </label>
+                            <label style={{ fontSize: 13 }}>Date:
+                              <input
+                                type="date"
+                                value={seededTransplantDate}
+                                onChange={(e) => setSeededTransplantDate(e.target.value)}
+                                style={{ ...compactInputStyle, minWidth: 130, marginLeft: 6 }}
+                              />
+                            </label>
+                            <button
+                              onClick={handleTransplantSeeded}
+                              disabled={seededTransplantSaving}
+                              style={primaryButtonStyle}
+                            >
+                              {seededTransplantSaving ? "Saving…" : "Save Transplant"}
+                            </button>
+                            <button onClick={() => setSeededTransplantRowNumber(null)} style={secondaryButtonStyle}>Cancel</button>
+                            {seededTransplantMessage && <span style={{ fontSize: 12, color: "#dc2626" }}>{seededTransplantMessage}</span>}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })
             )}
