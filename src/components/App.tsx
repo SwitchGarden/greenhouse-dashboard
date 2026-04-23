@@ -553,6 +553,8 @@ export default function App() {
   const [mode, setMode] = useState("Harvest");
   const [tower, setTower] = useState("");
   const [crop, setCrop] = useState("");
+  const [quickTrayType, setQuickTrayType] = useState<"Full Tray" | "Half Tray">("Full Tray");
+  const [quickTrayCount, setQuickTrayCount] = useState("1");
   const [lbs, setLbs] = useState("");
   const [podsChanged, setPodsChanged] = useState("");
   const [entryStatus, setEntryStatus] = useState("");
@@ -1677,7 +1679,13 @@ const overdueOrders = useMemo(() => {
   const saveQuickAction = async () => {
     setMessage("");
 
-    if ((!tower && mode !== "Farmers Market") || !crop || !entryDate) {
+    const isSeedMode = mode === "Seed";
+
+    if (!isSeedMode && !tower && mode !== "Farmers Market") {
+      setMessage("Please enter a tower.");
+      return;
+    }
+    if (!crop || !entryDate) {
       setMessage("Please select crop and date.");
       return;
     }
@@ -1693,18 +1701,24 @@ const overdueOrders = useMemo(() => {
       : "";
     const convertedPods = quickEntryUnitType === "Plants" ? Number(lbs || 0) : (podsChanged ? Number(podsChanged) : "");
 
+    const trayCount = Math.max(1, Number(quickTrayCount) || 1);
+    const seedsPerTray = quickTrayType === "Full Tray" ? FULL_TRAY_SEEDS : HALF_TRAY_SEEDS;
+    const trayNote = isSeedMode
+      ? `${trayCount} ${quickTrayType}${trayCount !== 1 ? "s" : ""} (${trayCount * seedsPerTray} seeds)`
+      : "";
+
     const payload = {
       action: "saveStaffAction",
       mode,
-      tower: mode === "Farmers Market" ? "" : tower,
+      tower: isSeedMode || mode === "Farmers Market" ? "" : tower,
       crop,
       lbs: convertedLbs,
-      podsChanged: convertedPods,
-      status: entryStatus,
-      stage,
+      podsChanged: isSeedMode ? trayCount * seedsPerTray : convertedPods,
+      status: entryStatus || (isSeedMode ? "Completed" : ""),
+      stage: stage || (isSeedMode ? "Seeded" : ""),
       date: entryDate,
       scrapType,
-      note: [note, ["Harvest", "Farmers Market", "Pack"].includes(mode) ? `Unit: ${quickEntryUnitType}; Qty Entered: ${enteredQty}` : ""].filter(Boolean).join(" | "),
+      note: [trayNote, note, ["Harvest", "Farmers Market", "Pack"].includes(mode) ? `Unit: ${quickEntryUnitType}; Qty Entered: ${enteredQty}` : ""].filter(Boolean).join(" | "),
     };
 
     try {
@@ -1721,6 +1735,7 @@ const overdueOrders = useMemo(() => {
         setStage("");
         setScrapType("");
         setNote("");
+        setQuickTrayCount("1");
         await loadStaffActions();
       } else {
         setMessage(result.message || "Unable to save entry.");
@@ -3617,9 +3632,23 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     </select>
                   </Field>
 
-                  <Field label="Tower">
-                    <input value={tower} onChange={(e) => setTower(e.target.value)} style={inputStyle} placeholder="R1" />
-                  </Field>
+                  {mode === "Seed" ? (
+                    <>
+                      <Field label="Tray Type">
+                        <select value={quickTrayType} onChange={(e) => setQuickTrayType(e.target.value as "Full Tray" | "Half Tray")} style={inputStyle}>
+                          <option value="Full Tray">Full Tray (88 seeds)</option>
+                          <option value="Half Tray">Half Tray (44 seeds)</option>
+                        </select>
+                      </Field>
+                      <Field label="# of Trays">
+                        <input type="number" min="1" value={quickTrayCount} onChange={(e) => setQuickTrayCount(e.target.value)} style={inputStyle} placeholder="1" />
+                      </Field>
+                    </>
+                  ) : (
+                    <Field label="Tower">
+                      <input value={tower} onChange={(e) => setTower(e.target.value)} style={inputStyle} placeholder="R1" />
+                    </Field>
+                  )}
 
                   <Field label="Crop">
                     <select value={crop} onChange={(e) => setCrop(e.target.value)} style={inputStyle}>
@@ -3632,23 +3661,27 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     </select>
                   </Field>
 
-                  <Field label={quickEntryUnitType === "Plants" ? "Plants / Pods" : quickEntryUnitType === "Lbs" ? "Lbs" : `Qty (${quickEntryUnitType})`}>
-                    <input value={lbs} onChange={(e) => setLbs(e.target.value)} style={inputStyle} placeholder="12" />
-                  </Field>
+                  {mode !== "Seed" && (
+                    <>
+                      <Field label={quickEntryUnitType === "Plants" ? "Plants / Pods" : quickEntryUnitType === "Lbs" ? "Lbs" : `Qty (${quickEntryUnitType})`}>
+                        <input value={lbs} onChange={(e) => setLbs(e.target.value)} style={inputStyle} placeholder="12" />
+                      </Field>
 
-                  <Field label="Entry Unit">
-                    <select value={quickEntryUnitType} onChange={(e) => setQuickEntryUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
-                      <option value="Lbs">Lbs</option>
-                      <option value="Plants">Plants</option>
-                      <option value="6oz Bag">6oz Bag</option>
-                      <option value="6oz Clamshell">6oz Clamshell</option>
-                      <option value="0.75oz Small Bag">0.75oz Small Bag</option>
-                    </select>
-                  </Field>
+                      <Field label="Entry Unit">
+                        <select value={quickEntryUnitType} onChange={(e) => setQuickEntryUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
+                          <option value="Lbs">Lbs</option>
+                          <option value="Plants">Plants</option>
+                          <option value="6oz Bag">6oz Bag</option>
+                          <option value="6oz Clamshell">6oz Clamshell</option>
+                          <option value="0.75oz Small Bag">0.75oz Small Bag</option>
+                        </select>
+                      </Field>
 
-                  <Field label="Pods Changed">
-                    <input value={podsChanged} onChange={(e) => setPodsChanged(e.target.value)} style={inputStyle} placeholder="20" />
-                  </Field>
+                      <Field label="Pods Changed">
+                        <input value={podsChanged} onChange={(e) => setPodsChanged(e.target.value)} style={inputStyle} placeholder="20" />
+                      </Field>
+                    </>
+                  )}
 
                   <Field label="Status">
                     <input value={entryStatus} onChange={(e) => setEntryStatus(e.target.value)} style={inputStyle} placeholder="Completed" />
