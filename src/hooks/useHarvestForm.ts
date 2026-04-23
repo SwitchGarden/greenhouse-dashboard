@@ -22,7 +22,7 @@ const initialState: HarvestFormState = {
 };
 
 export type HarvestFormAction =
-  | { type: "START"; item: ProductionInventoryRow }
+  | { type: "START"; item: ProductionInventoryRow; actionType?: "Full Harvest" | "Trim Harvest" }
   | { type: "SET_FIELD"; field: keyof HarvestFormState; value: string }
   | { type: "CLEAR" };
 
@@ -32,10 +32,11 @@ function reducer(state: HarvestFormState, action: Action): HarvestFormState {
   switch (action.type) {
     case "START": {
       const item = action.item;
+      const defaultType = isRepeatHarvestCrop(getInventoryCrop(item)) ? "Trim Harvest" : "Full Harvest";
       return {
         ...state,
         activeRowNumber: String(item.rowNumber),
-        actionType: isRepeatHarvestCrop(getInventoryCrop(item)) ? "Trim Harvest" : "Full Harvest",
+        actionType: action.actionType ?? defaultType,
         podsValue: String(getInventoryActivePods(item) || ""),
         outputUnit: "Lbs",
         outputQty: String(getInventoryRemainingExpectedLbs(item) || ""),

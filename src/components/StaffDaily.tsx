@@ -165,7 +165,7 @@ export type StaffDailyProps = {
   handleReadyHarvestSubmit: () => void;
   handleMarkPacked: (task: PackTask) => void;
   saveQuickAction: () => void;
-  startReadyHarvestAction: (item: ProductionInventoryRow) => void;
+  startReadyHarvestAction: (item: ProductionInventoryRow, actionType?: "Full Harvest" | "Trim Harvest") => void;
   clearReadyHarvestAction: () => void;
 };
 
@@ -291,7 +291,6 @@ export function StaffDaily({
           <Field label="Mode">
             <select value={mode} onChange={(e) => setMode(e.target.value)} style={inputStyle}>
               <option value="Harvest">Harvest</option>
-              <option value="Farmers Market">Farmers Market</option>
               <option value="Scrapped">Scrapped</option>
               <option value="Seed">Seed</option>
               <option value="Transplant">Transplant</option>
@@ -462,16 +461,34 @@ export function StaffDaily({
         </TableScroll>
       </Panel>
 
-      <Panel title="Transplant Today">
+      <Panel title="Transplant">
+        <div style={{ fontSize: 13, color: "#475569", marginBottom: 10 }}>
+          Items marked <strong>Ready</strong> are due to transplant today. Early transplant is available for any seeded tower — use it if the plant grew faster than expected.
+        </div>
         <FormGrid columns={3}>
           <Field label="Seeded Item">
             <select value={transplantRowNumber} onChange={(e) => setTransplantRowNumber(e.target.value)} style={compactInputStyle}>
               <option value="">Select seeded item</option>
-              {transplantTodayTasks.map((item) => (
-                <option key={item.rowNumber} value={item.rowNumber}>
-                  {getInventoryCrop(item)} - {formatDateDisplay(getInventorySeededDate(item))}
-                </option>
-              ))}
+              {transplantTodayTasks.length > 0 && (
+                <optgroup label="Ready to Transplant">
+                  {transplantTodayTasks.map((item) => (
+                    <option key={item.rowNumber} value={item.rowNumber}>
+                      {getInventoryCrop(item)} — Seeded {formatDateDisplay(getInventorySeededDate(item))}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {seededInventory.filter((item) => !transplantTodayTasks.some((t) => t.rowNumber === item.rowNumber)).length > 0 && (
+                <optgroup label="Early Transplant">
+                  {seededInventory
+                    .filter((item) => !transplantTodayTasks.some((t) => t.rowNumber === item.rowNumber))
+                    .map((item) => (
+                      <option key={item.rowNumber} value={item.rowNumber}>
+                        {getInventoryCrop(item)} — Seeded {formatDateDisplay(getInventorySeededDate(item))}
+                      </option>
+                    ))}
+                </optgroup>
+              )}
             </select>
           </Field>
           <Field label="Tower">
@@ -550,25 +567,47 @@ export function StaffDaily({
                               : "-"}
                           </td>
                           <td style={tdStyle}>
-                            <button
-                              onClick={() => startReadyHarvestAction(item)}
-                              style={primaryButtonStyle}
-                              aria-label={`Mark ${getInventoryCrop(item)} in tower ${getInventoryTower(item) || "unassigned"} as harvested`}
-                            >
-                              Mark Harvested
-                            </button>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              <button
+                                onClick={() => startReadyHarvestAction(item, "Full Harvest")}
+                                style={primaryButtonStyle}
+                                aria-label={`Full harvest ${getInventoryCrop(item)} in tower ${getInventoryTower(item) || "unassigned"}`}
+                              >
+                                Full Harvest
+                              </button>
+                              <button
+                                onClick={() => startReadyHarvestAction(item, "Trim Harvest")}
+                                style={secondaryButtonStyle}
+                                aria-label={`Trim harvest ${getInventoryCrop(item)} in tower ${getInventoryTower(item) || "unassigned"}`}
+                              >
+                                Trim Harvest
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         {isActiveRow && (
                           <tr>
                             <td colSpan={9} style={{ ...tdStyle, background: "#f8fafc" }}>
+                              <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
+                                <span style={{
+                                  display: "inline-block",
+                                  padding: "3px 10px",
+                                  borderRadius: 12,
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  background: harvestForm.actionType === "Trim Harvest" ? "#dbeafe" : "#dcfce7",
+                                  color: harvestForm.actionType === "Trim Harvest" ? "#1d4ed8" : "#15803d",
+                                }}>
+                                  {harvestForm.actionType}
+                                </span>
+                                <button
+                                  onClick={() => dispatchHarvest({ type: "SET_FIELD", field: "actionType", value: harvestForm.actionType === "Trim Harvest" ? "Full Harvest" : "Trim Harvest" })}
+                                  style={{ ...secondaryButtonStyle, fontSize: 11, padding: "3px 8px" }}
+                                >
+                                  Switch to {harvestForm.actionType === "Trim Harvest" ? "Full Harvest" : "Trim Harvest"}
+                                </button>
+                              </div>
                               <FormGrid columns={3}>
-                                <Field label="Harvest Type">
-                                  <select value={harvestForm.actionType} onChange={(e) => dispatchHarvest({ type: "SET_FIELD", field: "actionType", value: e.target.value })} style={compactInputStyle}>
-                                    <option value="Full Harvest">Full Harvest</option>
-                                    <option value="Trim Harvest">Trim Harvest</option>
-                                  </select>
-                                </Field>
                                 <Field label={harvestForm.actionType === "Trim Harvest" ? "Pods Trimmed" : "Pods Harvested"}>
                                   <input value={harvestForm.podsValue} onChange={(e) => dispatchHarvest({ type: "SET_FIELD", field: "podsValue", value: e.target.value })} style={compactInputStyle} />
                                 </Field>

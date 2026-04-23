@@ -1123,18 +1123,18 @@ const overdueOrders = useMemo(() => {
   const saveQuickAction = async () => {
     setMessage("");
 
-    if ((!tower && mode !== "Farmers Market") || !crop || !entryDate) {
-      setMessage("Please select crop and date.");
+    if (!tower || !crop || !entryDate) {
+      setMessage("Please select crop, tower, and date.");
       return;
     }
 
-    if ((mode === "Harvest" || mode === "Farmers Market" || mode === "Scrapped" || mode === "Pack") && !lbs) {
+    if (["Harvest", "Scrapped", "Pack"].includes(mode) && !lbs) {
       setMessage("Please enter quantity for this action.");
       return;
     }
 
     const enteredQty = Number(lbs || 0);
-    const convertedLbs = ["Harvest", "Farmers Market", "Scrapped", "Pack"].includes(mode)
+    const convertedLbs = ["Harvest", "Scrapped", "Pack"].includes(mode)
       ? (quickEntryUnitType === "Plants" ? "" : quantityToLbs(quickEntryUnitType, enteredQty))
       : "";
     const convertedPods = quickEntryUnitType === "Plants" ? Number(lbs || 0) : (podsChanged ? Number(podsChanged) : "");
@@ -1142,7 +1142,7 @@ const overdueOrders = useMemo(() => {
     const payload = {
       action: "saveStaffAction",
       mode,
-      tower: mode === "Farmers Market" ? "" : tower,
+      tower,
       crop,
       lbs: convertedLbs,
       podsChanged: convertedPods,
@@ -1150,7 +1150,7 @@ const overdueOrders = useMemo(() => {
       stage,
       date: entryDate,
       scrapType,
-      note: [note, ["Harvest", "Farmers Market", "Pack"].includes(mode) ? `Unit: ${quickEntryUnitType}; Qty Entered: ${enteredQty}` : ""].filter(Boolean).join(" | "),
+      note: [note, ["Harvest", "Pack"].includes(mode) ? `Unit: ${quickEntryUnitType}; Qty Entered: ${enteredQty}` : ""].filter(Boolean).join(" | "),
     };
 
     try {
@@ -1875,8 +1875,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     }
   };
 
-  const startReadyHarvestAction = (item: ProductionInventoryRow) => {
-    dispatchHarvest({ type: "START", item });
+  const startReadyHarvestAction = (item: ProductionInventoryRow, actionType?: "Full Harvest" | "Trim Harvest") => {
+    dispatchHarvest({ type: "START", item, actionType });
   };
 
   const clearReadyHarvestAction = () => {
