@@ -35,6 +35,7 @@ import {
   getInventoryRemainingExpectedLbs,
   getInventoryStatus,
   getInventoryNotes,
+  validateTowerName,
 } from "../lib/utils/inventoryUtils";
 
 export type ProductionInventoryProps = {
@@ -104,6 +105,11 @@ export function ProductionInventory({
         <FormGrid columns={3}>
           <Field label="Tower">
             <input value={inventoryForm.tower} onChange={(e) => dispatchInventory({ type: "SET_FIELD", field: "tower", value: e.target.value })} style={inputStyle} placeholder="R1" />
+            {validateTowerName(inventoryForm.tower) && (
+              <span style={{ color: "#dc2626", fontSize: 12, marginTop: 4, display: "block" }}>
+                {validateTowerName(inventoryForm.tower)}
+              </span>
+            )}
           </Field>
 
           <Field label="Tower Type">
@@ -204,6 +210,11 @@ export function ProductionInventory({
 
             <Field label="Tower">
               <input value={editInventoryForm.tower} onChange={(e) => dispatchEditInventory({ type: "SET_FIELD", field: "tower", value: e.target.value })} style={inputStyle} />
+              {validateTowerName(editInventoryForm.tower) && (
+                <span style={{ color: "#dc2626", fontSize: 12, marginTop: 4, display: "block" }}>
+                  {validateTowerName(editInventoryForm.tower)}
+                </span>
+              )}
             </Field>
 
             <Field label="Tower Type">

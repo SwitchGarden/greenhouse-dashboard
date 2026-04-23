@@ -38,6 +38,7 @@ import {
 import {
   toNumber,
   normalizeStatus,
+  validateTowerName,
   getTowerMaxPods,
   TOWER_ROW_ORDER,
   parseTowerForSort,
@@ -1128,6 +1129,12 @@ const overdueOrders = useMemo(() => {
       return;
     }
 
+    const quickTowerErr = validateTowerName(tower);
+    if (quickTowerErr) {
+      setMessage(quickTowerErr);
+      return;
+    }
+
     if (["Harvest", "Scrapped", "Pack"].includes(mode) && !lbs) {
       setMessage("Please enter quantity for this action.");
       return;
@@ -1411,6 +1418,12 @@ const overdueOrders = useMemo(() => {
       return;
     }
 
+    const towerErr = validateTowerName(inventoryForm.tower);
+    if (towerErr) {
+      dispatchInventory({ type: "SET_FIELD", field: "message", value: towerErr });
+      return;
+    }
+
     try {
       dispatchInventory({ type: "SET_FIELD", field: "saving", value: true });
       dispatchInventory({ type: "SET_FIELD", field: "message", value: "" });
@@ -1589,6 +1602,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       return;
     }
 
+    const towerErr = validateTowerName(editInventoryForm.tower);
+    if (towerErr) {
+      dispatchEditInventory({ type: "SET_FIELD", field: "message", value: towerErr });
+      return;
+    }
+
     try {
       dispatchEditInventory({ type: "SET_FIELD", field: "saving", value: true });
       dispatchEditInventory({ type: "SET_FIELD", field: "message", value: "" });
@@ -1744,6 +1763,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
       if (!transplantTower) {
         setDailyMessage("Please enter the tower for transplant.");
+        return;
+      }
+
+      const transplantTowerErr = validateTowerName(transplantTower);
+      if (transplantTowerErr) {
+        setDailyMessage(transplantTowerErr);
         return;
       }
 

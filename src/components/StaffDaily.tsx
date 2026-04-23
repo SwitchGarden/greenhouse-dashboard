@@ -50,7 +50,7 @@ import {
   getStaffDate,
 } from "../lib/utils/staffUtils";
 import { quantityToLbs, MAX_TRIMS } from "../lib/utils/cropUtils";
-import { toNumber, getInventoryTrimCount } from "../lib/utils/inventoryUtils";
+import { toNumber, getInventoryTrimCount, validateTowerName } from "../lib/utils/inventoryUtils";
 
 type PlantTask = {
   crop: string;
@@ -299,6 +299,11 @@ export function StaffDaily({
           </Field>
           <Field label="Tower">
             <input value={tower} onChange={(e) => setTower(e.target.value)} style={inputStyle} placeholder="R1" />
+            {validateTowerName(tower) && (
+              <span style={{ color: "#dc2626", fontSize: 12, marginTop: 4, display: "block" }}>
+                {validateTowerName(tower)}
+              </span>
+            )}
           </Field>
           <Field label="Crop">
             <select value={crop} onChange={(e) => setCrop(e.target.value)} style={inputStyle}>
@@ -493,6 +498,11 @@ export function StaffDaily({
           </Field>
           <Field label="Tower">
             <input value={transplantTower} onChange={(e) => setTransplantTower(e.target.value)} style={compactInputStyle} placeholder="R1" />
+            {validateTowerName(transplantTower) && (
+              <span style={{ color: "#dc2626", fontSize: 12, marginTop: 4, display: "block" }}>
+                {validateTowerName(transplantTower)}
+              </span>
+            )}
           </Field>
           <Field label="Tower Type">
             <select value={transplantTowerType} onChange={(e) => setTransplantTowerType(e.target.value)} style={compactInputStyle}>

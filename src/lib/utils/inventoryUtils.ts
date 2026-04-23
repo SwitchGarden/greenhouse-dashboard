@@ -4,6 +4,14 @@ import { formatDateInput, addDays } from './dateUtils';
 
 export const normalizeStatus = (status: string): string => (status || "").trim().toLowerCase();
 
+export const validateTowerName = (tower: string): string => {
+  if (!tower) return "";
+  if (!/^[A-Za-z][A-Za-z0-9]*$/.test(tower)) {
+    return "Tower name must start with a letter (e.g. R1, A12). Did you use 0 (zero) instead of O (letter)?";
+  }
+  return "";
+};
+
 export const toNumber = (value: unknown): number => {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
