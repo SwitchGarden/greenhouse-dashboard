@@ -1098,12 +1098,45 @@ const plantTodayTasks = useMemo(() => {
     }
   >();
 
+  const today = formatDateInput(new Date());
+
+  // Trim/repeat-harvest crops: lbs-based, pool from aggregated inventoryByCrop
   for (const [cropName, cropInventory] of inventoryByCrop.entries()) {
-    cropPools.set(cropName.toLowerCase(), {
-      readyLbs: cropInventory.readyNowLbs,
-      readyPlants: cropInventory.readyNowPlants,
-      futureEntries: cropInventory.futureEntries.map((entry) => ({ ...entry })),
-    });
+    const ck = cropAliases[normalizeCropKey(cropName)] || normalizeCropKey(cropName);
+    if (!isRepeatHarvestCrop(ck)) continue;
+    const existing = cropPools.get(ck);
+    if (existing) {
+      existing.readyLbs += cropInventory.readyNowLbs;
+      existing.readyPlants += cropInventory.readyNowPlants;
+      existing.futureEntries.push(...cropInventory.futureEntries.map(e => ({ ...e })));
+    } else {
+      cropPools.set(ck, {
+        readyLbs: cropInventory.readyNowLbs,
+        readyPlants: cropInventory.readyNowPlants,
+        futureEntries: cropInventory.futureEntries.map(e => ({ ...e })),
+      });
+    }
+  }
+
+  // Full-harvest crops (whole heads): build from individual towers so we can
+  // apply a 2-week freshness window — heads go bad quickly once ready.
+  // Each tower becomes its own future entry keyed by when it becomes ready.
+  for (const item of activeInventory) {
+    const rawCropName = (getInventoryCrop(item) || "").trim();
+    if (!rawCropName) continue;
+    const ck = cropAliases[normalizeCropKey(rawCropName)] || normalizeCropKey(rawCropName);
+    if (isRepeatHarvestCrop(ck)) continue;
+    const stage = normalizeStatus(getInventoryStage(item));
+    if (!["transplanted", "growing", "ready"].includes(stage)) continue;
+    const activePods = toNumber(getInventoryActivePods(item));
+    const remainingLbs = toNumber(getInventoryRemainingExpectedLbs(item));
+    if (activePods <= 0) continue;
+    const readyDate = getInventoryEffectiveReadyDate(item);
+    // Already-past-ready towers count as available starting today
+    const effectiveDate = readyDate && readyDate <= today ? today : (readyDate || today);
+    const pool = cropPools.get(ck) || { readyLbs: 0, readyPlants: 0, futureEntries: [] };
+    pool.futureEntries.push({ readyDate: effectiveDate, lbs: remainingLbs, plants: activePods });
+    cropPools.set(ck, pool);
   }
 
   const grouped = new Map<
@@ -1122,8 +1155,6 @@ const plantTodayTasks = useMemo(() => {
       urgency: "Overdue" | "Today" | "Upcoming";
     }
   >();
-
-  const today = formatDateInput(new Date());
 
   // Expand orders: salad mix orders become per-component crop demands
   type OrderDemand = { cropKey: string; cropName: string; dueDate: string; qtyInLbs: number; qtyInPlants: number; customer: string };
@@ -1228,13 +1259,38 @@ const plantTodayTasks = useMemo(() => {
 
     let newTowersNeeded: number;
     if (qtyInPlants > 0) {
-      // Whole-head crops: compare plants directly to avoid lbs-per-plant mismatch
-      const shortagePlants = Math.max(0, qtyInPlants - availablePlantsByDue);
+      // Full-harvest crops: use 2-week freshness window per tower.
+      // Plants from a tower that became ready more than 2 weeks before this
+      // market date are treated as expired (harvested, wasted, or sold elsewhere).
+      const freshWindowStart = addDays(dueDate, -14);
+      let freshPlants = 0;
+      const freshEntries: Array<{ readyDate: string; lbs: number; plants: number }> = [];
+      const stillFuture: Array<{ readyDate: string; lbs: number; plants: number }> = [];
+      for (const entry of pool.futureEntries) {
+        if (entry.readyDate > dueDate) {
+          stillFuture.push(entry);
+        } else if (entry.readyDate >= freshWindowStart) {
+          freshPlants += entry.plants;
+          freshEntries.push(entry);
+        }
+        // else: ready > 2 weeks ago → expired, discard
+      }
+      const shortagePlants = Math.max(0, qtyInPlants - freshPlants);
       newTowersNeeded = shortagePlants > 0 ? Math.ceil(shortagePlants / HALF_TRAY_SEEDS) : 0;
-      const consumedPlants = Math.min(qtyInPlants, availablePlantsByDue);
-      const lbsPerPlant = availablePlantsByDue > 0 ? availableLbsByDue / availablePlantsByDue : 0;
-      pool.readyLbs = Math.max(0, pool.readyLbs - consumedPlants * lbsPerPlant);
-      pool.readyPlants = Math.max(0, pool.readyPlants - consumedPlants);
+      // Consume from oldest-first
+      freshEntries.sort((a, b) => a.readyDate.localeCompare(b.readyDate));
+      let toConsume = Math.min(qtyInPlants, freshPlants);
+      for (const entry of freshEntries) {
+        if (toConsume <= 0) { stillFuture.push(entry); continue; }
+        if (entry.plants <= toConsume) {
+          toConsume -= entry.plants;
+        } else {
+          stillFuture.push({ readyDate: entry.readyDate, plants: entry.plants - toConsume, lbs: entry.lbs * (entry.plants - toConsume) / entry.plants });
+          toConsume = 0;
+        }
+      }
+      pool.readyPlants = 0;
+      pool.futureEntries = stillFuture;
     } else {
       const shortageLbs = Math.max(0, qtyInLbs - availableLbsByDue);
       const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropKey, HALF_TRAY_SEEDS));
@@ -1242,9 +1298,9 @@ const plantTodayTasks = useMemo(() => {
       const consumedLbs = Math.min(qtyInLbs, availableLbsByDue);
       pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
       pool.readyPlants = Math.max(0, availablePlantsByDue - Math.round((consumedLbs * 16) / 6));
+      pool.futureEntries = remainingFutureEntries;
     }
 
-    pool.futureEntries = remainingFutureEntries;
     cropPools.set(cropKey, pool);
 
     if (newTowersNeeded <= 0 || !seedByDate) continue;
