@@ -4079,97 +4079,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       )}
     </Panel>
 
-                  <Panel title="Quick Action / Staff Entry">
-                <FormGrid columns={2}>
-                  <Field label="Mode">
-                    <select value={mode} onChange={(e) => setMode(e.target.value)} style={inputStyle}>
-                      <option value="Harvest">Harvest</option>
-                      <option value="Farmers Market">Farmers Market</option>
-                      <option value="Scrapped">Scrapped</option>
-                      <option value="Seed">Seed</option>
-                      <option value="Transplant">Transplant</option>
-                      <option value="Pack">Pack</option>
-                    </select>
-                  </Field>
-
-                  {mode === "Seed" ? (
-                    <>
-                      <Field label="Tray Type">
-                        <select value={quickTrayType} onChange={(e) => setQuickTrayType(e.target.value as "Full Tray" | "Half Tray")} style={inputStyle}>
-                          <option value="Full Tray">Full Tray (88 seeds)</option>
-                          <option value="Half Tray">Half Tray (44 seeds)</option>
-                        </select>
-                      </Field>
-                      <Field label="# of Trays">
-                        <input type="number" min="1" value={quickTrayCount} onChange={(e) => setQuickTrayCount(e.target.value)} style={inputStyle} placeholder="1" />
-                      </Field>
-                    </>
-                  ) : (
-                    <Field label="Tower">
-                      <input value={tower} onChange={(e) => setTower(e.target.value)} style={inputStyle} placeholder="R1" />
-                    </Field>
-                  )}
-
-                  <Field label="Crop">
-                    <select value={crop} onChange={(e) => setCrop(e.target.value)} style={inputStyle}>
-                      <option value="">Select Crop</option>
-                      {uniqueCrops.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  {mode !== "Seed" && (
-                    <>
-                      <Field label={quickEntryUnitType === "Plants" ? "Plants / Pods" : quickEntryUnitType === "Lbs" ? "Lbs" : `Qty (${quickEntryUnitType})`}>
-                        <input value={lbs} onChange={(e) => setLbs(e.target.value)} style={inputStyle} placeholder="12" />
-                      </Field>
-
-                      <Field label="Entry Unit">
-                        <select value={quickEntryUnitType} onChange={(e) => setQuickEntryUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
-                          <option value="Lbs">Lbs</option>
-                          <option value="Plants">Plants</option>
-                          <option value="6oz Bag">6oz Bag</option>
-                          <option value="6oz Clamshell">6oz Clamshell</option>
-                          <option value="0.75oz Small Bag">0.75oz Small Bag</option>
-                        </select>
-                      </Field>
-
-                      <Field label="Pods Changed">
-                        <input value={podsChanged} onChange={(e) => setPodsChanged(e.target.value)} style={inputStyle} placeholder="20" />
-                      </Field>
-                    </>
-                  )}
-
-                  <Field label="Status">
-                    <input value={entryStatus} onChange={(e) => setEntryStatus(e.target.value)} style={inputStyle} placeholder="Completed" />
-                  </Field>
-
-                  <Field label="Stage">
-                    <input value={stage} onChange={(e) => setStage(e.target.value)} style={inputStyle} placeholder="Growing / Ready" />
-                  </Field>
-
-                  <Field label="Date">
-                    <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
-                  </Field>
-
-                  <Field label="Scrap Type">
-                    <input value={scrapType} onChange={(e) => setScrapType(e.target.value)} style={inputStyle} placeholder="Disease / Damage" />
-                  </Field>
-                </FormGrid>
-
-                <Field label="Note">
-                  <textarea value={note} onChange={(e) => setNote(e.target.value)} style={textareaStyle} />
-                </Field>
-
-                <ActionRow message={message}>
-                  <button onClick={saveQuickAction} style={primaryButtonStyle}>
-                    Save to Staff_Actions
-                  </button>
-                </ActionRow>
-              </Panel>
 
 
     {/* Farmers Market Standing Orders */}
@@ -4397,7 +4306,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     </Panel>
 
     <Panel title="Seeded Section">
-      <TableScroll>
+      <div style={{ maxHeight: 480, overflowY: "auto", overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 10 }}>
+        <TableScroll>
         <table style={tableStyle}>
           <thead>
             <tr>
@@ -4561,94 +4471,9 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           </tbody>
         </table>
       </TableScroll>
+      </div>
     </Panel>
 
-    <Panel title="Transplant Today">
-      <FormGrid columns={3}>
-        <Field label="Seeded Item">
-          <select
-            value={transplantRowNumber}
-            onChange={(e) => setTransplantRowNumber(e.target.value)}
-            style={compactInputStyle}
-          >
-            <option value="">Select seeded item</option>
-            {transplantTodayTasks.map((item) => (
-              <option key={item.rowNumber} value={item.rowNumber}>
-                {getInventoryCrop(item)} - {formatDateDisplay(getInventorySeededDate(item))}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Tower">
-          <input
-            value={transplantTower}
-            onChange={(e) => setTransplantTower(e.target.value)}
-            style={compactInputStyle}
-            placeholder="R1"
-          />
-        </Field>
-
-        <Field label="Tower Type">
-          <select
-            value={transplantTowerType}
-            onChange={(e) => setTransplantTowerType(e.target.value)}
-            style={compactInputStyle}
-          >
-            <option value="Low Density">Low Density (44)</option>
-            <option value="High Density">High Density (160)</option>
-          </select>
-        </Field>
-
-        <Field label="Max Pods">
-          <input
-            value={transplantMaxPods}
-            onChange={(e) => setTransplantMaxPods(e.target.value)}
-            style={compactInputStyle}
-          />
-        </Field>
-
-        <Field label="Active Pods">
-          <input
-            value={transplantActivePods}
-            onChange={(e) => setTransplantActivePods(e.target.value)}
-            style={compactInputStyle}
-          />
-        </Field>
-
-        <Field label="Transplant Date">
-          <input
-            type="date"
-            value={transplantDate}
-            onChange={(e) => setTransplantDate(e.target.value)}
-            style={compactInputStyle}
-          />
-        </Field>
-
-        <Field label="Estimated Ready Date">
-          <input
-            type="date"
-            value={transplantReadyDate}
-            onChange={(e) => setTransplantReadyDate(e.target.value)}
-            style={compactInputStyle}
-          />
-        </Field>
-      </FormGrid>
-
-      <Field label="Notes">
-        <input
-          value={transplantNotes}
-          onChange={(e) => setTransplantNotes(e.target.value)}
-          style={compactInputStyle}
-        />
-      </Field>
-
-      <ActionRow message={dailyMessage}>
-        <button onClick={handleMarkTransplanted} style={primaryButtonStyle}>
-          Mark Transplanted
-        </button>
-      </ActionRow>
-    </Panel>
     <Panel title="Ready to Harvest">
       <div style={{ fontSize: 13, color: "#475569", marginBottom: 10 }}>Only 10 rows show at a time. Scroll to see more. Use Mark Harvested to record a full harvest or a trim harvest.</div>
       <div style={{ maxHeight: 440, overflowY: "auto", overflowX: "hidden", border: "1px solid #e5e7eb", borderRadius: 10 }}>
@@ -4803,6 +4628,87 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       </TableScroll>
     </Panel>
 
+    <Panel title="Quick Action / Staff Entry">
+      <FormGrid columns={2}>
+        <Field label="Mode">
+          <select value={mode} onChange={(e) => setMode(e.target.value)} style={inputStyle}>
+            <option value="Harvest">Harvest</option>
+            <option value="Farmers Market">Farmers Market</option>
+            <option value="Scrapped">Scrapped</option>
+            <option value="Seed">Seed</option>
+            <option value="Transplant">Transplant</option>
+            <option value="Pack">Pack</option>
+          </select>
+        </Field>
+
+        {mode === "Seed" ? (
+          <>
+            <Field label="Tray Type">
+              <select value={quickTrayType} onChange={(e) => setQuickTrayType(e.target.value as "Full Tray" | "Half Tray")} style={inputStyle}>
+                <option value="Full Tray">Full Tray (88 seeds)</option>
+                <option value="Half Tray">Half Tray (44 seeds)</option>
+              </select>
+            </Field>
+            <Field label="# of Trays">
+              <input type="number" min="1" value={quickTrayCount} onChange={(e) => setQuickTrayCount(e.target.value)} style={inputStyle} placeholder="1" />
+            </Field>
+          </>
+        ) : (
+          <Field label="Tower">
+            <input value={tower} onChange={(e) => setTower(e.target.value)} style={inputStyle} placeholder="R1" />
+          </Field>
+        )}
+
+        <Field label="Crop">
+          <select value={crop} onChange={(e) => setCrop(e.target.value)} style={inputStyle}>
+            <option value="">Select Crop</option>
+            {uniqueCrops.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+        </Field>
+
+        {mode !== "Seed" && (
+          <>
+            <Field label={quickEntryUnitType === "Plants" ? "Plants / Pods" : quickEntryUnitType === "Lbs" ? "Lbs" : `Qty (${quickEntryUnitType})`}>
+              <input value={lbs} onChange={(e) => setLbs(e.target.value)} style={inputStyle} placeholder="12" />
+            </Field>
+            <Field label="Entry Unit">
+              <select value={quickEntryUnitType} onChange={(e) => setQuickEntryUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
+                <option value="Lbs">Lbs</option>
+                <option value="Plants">Plants</option>
+                <option value="6oz Bag">6oz Bag</option>
+                <option value="6oz Clamshell">6oz Clamshell</option>
+                <option value="0.75oz Small Bag">0.75oz Small Bag</option>
+              </select>
+            </Field>
+            <Field label="Pods Changed">
+              <input value={podsChanged} onChange={(e) => setPodsChanged(e.target.value)} style={inputStyle} placeholder="20" />
+            </Field>
+          </>
+        )}
+
+        <Field label="Status">
+          <input value={entryStatus} onChange={(e) => setEntryStatus(e.target.value)} style={inputStyle} placeholder="Completed" />
+        </Field>
+        <Field label="Stage">
+          <input value={stage} onChange={(e) => setStage(e.target.value)} style={inputStyle} placeholder="Growing / Ready" />
+        </Field>
+        <Field label="Date">
+          <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} style={inputStyle} />
+        </Field>
+        <Field label="Scrap Type">
+          <input value={scrapType} onChange={(e) => setScrapType(e.target.value)} style={inputStyle} placeholder="Disease / Damage" />
+        </Field>
+      </FormGrid>
+      <Field label="Note">
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} style={textareaStyle} />
+      </Field>
+      <ActionRow message={message}>
+        <button onClick={saveQuickAction} style={primaryButtonStyle}>Save to Staff_Actions</button>
+      </ActionRow>
+    </Panel>
+
     <Panel title="Overdue / Due Soon">
       <TableScroll>
         <table style={tableStyle}>
@@ -4836,6 +4742,93 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           </tbody>
         </table>
       </TableScroll>
+    </Panel>
+
+    <Panel title="Transplant Today">
+      <FormGrid columns={3}>
+        <Field label="Seeded Item">
+          <select
+            value={transplantRowNumber}
+            onChange={(e) => setTransplantRowNumber(e.target.value)}
+            style={compactInputStyle}
+          >
+            <option value="">Select seeded item</option>
+            {transplantTodayTasks.map((item) => (
+              <option key={item.rowNumber} value={item.rowNumber}>
+                {getInventoryCrop(item)} - {formatDateDisplay(getInventorySeededDate(item))}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Tower">
+          <input
+            value={transplantTower}
+            onChange={(e) => setTransplantTower(e.target.value)}
+            style={compactInputStyle}
+            placeholder="R1"
+          />
+        </Field>
+
+        <Field label="Tower Type">
+          <select
+            value={transplantTowerType}
+            onChange={(e) => setTransplantTowerType(e.target.value)}
+            style={compactInputStyle}
+          >
+            <option value="Low Density">Low Density (44)</option>
+            <option value="High Density">High Density (160)</option>
+          </select>
+        </Field>
+
+        <Field label="Max Pods">
+          <input
+            value={transplantMaxPods}
+            onChange={(e) => setTransplantMaxPods(e.target.value)}
+            style={compactInputStyle}
+          />
+        </Field>
+
+        <Field label="Active Pods">
+          <input
+            value={transplantActivePods}
+            onChange={(e) => setTransplantActivePods(e.target.value)}
+            style={compactInputStyle}
+          />
+        </Field>
+
+        <Field label="Transplant Date">
+          <input
+            type="date"
+            value={transplantDate}
+            onChange={(e) => setTransplantDate(e.target.value)}
+            style={compactInputStyle}
+          />
+        </Field>
+
+        <Field label="Estimated Ready Date">
+          <input
+            type="date"
+            value={transplantReadyDate}
+            onChange={(e) => setTransplantReadyDate(e.target.value)}
+            style={compactInputStyle}
+          />
+        </Field>
+      </FormGrid>
+
+      <Field label="Notes">
+        <input
+          value={transplantNotes}
+          onChange={(e) => setTransplantNotes(e.target.value)}
+          style={compactInputStyle}
+        />
+      </Field>
+
+      <ActionRow message={dailyMessage}>
+        <button onClick={handleMarkTransplanted} style={primaryButtonStyle}>
+          Mark Transplanted
+        </button>
+      </ActionRow>
     </Panel>
 
     <Panel title="Recent Activity">
