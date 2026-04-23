@@ -50,7 +50,8 @@ import {
   getStaffNote,
   getStaffTimestamp,
 } from "../lib/utils/staffUtils";
-import { quantityToLbs, toNumber } from "../lib/utils/cropUtils";
+import { quantityToLbs } from "../lib/utils/cropUtils";
+import { toNumber } from "../lib/utils/inventoryUtils";
 
 type GroupedOrder = {
   key: string;
