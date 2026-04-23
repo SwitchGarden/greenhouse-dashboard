@@ -70,6 +70,7 @@ import {
   getOrderStatus,
   getOrderType,
   getOrderFrequency,
+  getOrderContractEndDate,
 } from "../lib/utils/orderUtils";
 import {
   getStaffMode,
@@ -361,67 +362,127 @@ export default function App() {
   const salesPlanner: SalesPlannerResult = useMemo(() => {
     const qtyNeeded = toNumber(salesQuantityNeeded);
     const cropName = (salesCrop || "").trim();
-    const cropInventory = inventoryByCrop.get(cropName);
-    const targetDate = salesOrderType === "Contract" ? salesContractStartDate : salesDeliveryDate;
-
-    const committedSameCropLbs = salesOrders.reduce((sum, order) => {
-      if (editingSalesOrderRowNumber && order.rowNumber === editingSalesOrderRowNumber) return sum;
-      if ((getOrderCrop(order) || "").trim() !== cropName) return sum;
-      const dueDate = getOrderRequestedDeliveryDate(order);
-      const orderStatus = normalizeStatus(getOrderStatus(order));
-      if (["completed", "cancelled", "packed"].includes(orderStatus)) return sum;
-      if (!dueDate || !targetDate || dueDate > targetDate) return sum;
-      return sum + quantityToLbs(getOrderUnitType(order), toNumber(getOrderQuantityNeeded(order)));
-    }, 0);
-
-    const readyNowLbs = Math.max(0, (cropInventory?.readyNowLbs || 0) - committedSameCropLbs);
-    const readyNowPlants = Math.max(0, (cropInventory?.readyNowPlants || 0) - committedSameCropLbs * 16 / 6);
-    const availableQty = availableLbsToUnitQty(salesUnitType, readyNowLbs, readyNowPlants);
-    const shortageQty = Math.max(0, qtyNeeded - availableQty);
-
     const qtyNeededInLbs = quantityToLbs(salesUnitType, qtyNeeded);
-    const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
-    const towersNeeded = qtyNeededInLbs > 0 ? Math.ceil(qtyNeededInLbs / avgQtyPerTower) : 0;
-    const pipelineTowers = cropInventory ? cropInventory.pipelineTowers : 0;
-    const newTowersToPlant = Math.max(0, towersNeeded - pipelineTowers);
+    const avgLbsPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
+    const today = formatDateInput(new Date());
+    const cropInventory = inventoryByCrop.get(cropName);
+    const pipelineTowers = cropInventory?.pipelineTowers || 0;
+    const unitLabel = getUnitLabel(salesUnitType);
 
-    let estimatedReadyDate = "";
-    if (qtyNeeded > 0 && shortageQty > 0 && cropInventory) {
-      let runningLbs = readyNowLbs;
-      for (const entry of cropInventory.futureEntries) {
-        runningLbs += entry.lbs;
-        if (runningLbs >= qtyNeededInLbs) {
-          estimatedReadyDate = entry.readyDate;
-          break;
+    const empty: SalesPlannerResult = {
+      availableQty: 0, shortageQty: 0, towersNeeded: 0, pipelineTowers,
+      newTowersToPlant: 0, estimatedReadyDate: "", deliveryFeasible: false,
+      unitLabel, qtyNeededInLbs: 0,
+    };
+
+    if (!qtyNeeded || !cropName) return empty;
+
+    // Delivery dates for the new order being planned
+    const newOrderDates: string[] =
+      salesOrderType === "Contract"
+        ? generateRecurringDates(salesContractStartDate, salesContractEndDate, salesFrequency)
+        : salesDeliveryDate
+        ? [salesDeliveryDate]
+        : [];
+
+    if (newOrderDates.length === 0) return empty;
+
+    // Build a fresh pool from current inventory
+    const pool: { readyLbs: number; readyPlants: number; futureEntries: Array<{ readyDate: string; lbs: number; plants: number }> } =
+      buildCropPools(inventoryByCrop).get(cropName) || { readyLbs: 0, readyPlants: 0, futureEntries: [] };
+
+    // Expand all existing open orders for this crop to individual delivery dates
+    const existingDeliveries: Array<{ dueDate: string; unitType: string; qty: number }> = [];
+    for (const order of salesOrders) {
+      if (editingSalesOrderRowNumber && order.rowNumber === editingSalesOrderRowNumber) continue;
+      if ((getOrderCrop(order) || "").trim() !== cropName) continue;
+      const status = normalizeStatus(getOrderStatus(order));
+      if (["completed", "cancelled", "packed"].includes(status)) continue;
+      const dueDate = getOrderRequestedDeliveryDate(order);
+      if (!dueDate) continue;
+      const unitType = getOrderUnitType(order);
+      const qty = toNumber(getOrderQuantityNeeded(order));
+      const orderType = getOrderType(order);
+      const frequency = getOrderFrequency(order);
+      const contractEnd = getOrderContractEndDate(order);
+      if (orderType === "Contract" && frequency && contractEnd) {
+        for (const date of generateRecurringDates(dueDate, contractEnd, frequency)) {
+          existingDeliveries.push({ dueDate: date, unitType, qty });
         }
+      } else {
+        existingDeliveries.push({ dueDate, unitType, qty });
       }
     }
 
-    if (!estimatedReadyDate && shortageQty > 0) {
-      estimatedReadyDate = addDays(formatDateInput(new Date()), 42);
+    // Merge existing + new order deliveries and process in chronological order
+    type Delivery = { dueDate: string; unitType: string; qty: number; isNew: boolean };
+    const allDeliveries: Delivery[] = [
+      ...existingDeliveries.map(d => ({ ...d, isNew: false })),
+      ...newOrderDates.map(date => ({ dueDate: date, unitType: salesUnitType, qty: qtyNeeded, isNew: true })),
+    ].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+    let firstAvailableQty = 0;
+    let worstShortageQty = 0;
+    let worstShortageLbs = 0;
+    let firstProblemDate = "";
+    let newOrderSeen = false;
+
+    for (const delivery of allDeliveries) {
+      const result = allocateOrderAgainstPool(pool, cropName, delivery.dueDate, delivery.unitType, delivery.qty, avgLbsPerTower, true);
+      if (delivery.isNew) {
+        const avail = availableLbsToUnitQty(salesUnitType, result.availableLbsByDue, result.availablePlantsByDue);
+        if (!newOrderSeen) { firstAvailableQty = avail; newOrderSeen = true; }
+        if (result.shortageQty > worstShortageQty) {
+          worstShortageQty = result.shortageQty;
+          worstShortageLbs = result.shortageLbs;
+        }
+        if (result.shortageQty > 0 && !firstProblemDate) firstProblemDate = delivery.dueDate;
+      }
     }
 
-    const deliveryFeasible = qtyNeeded > 0 && (shortageQty === 0 || (!!targetDate && !!estimatedReadyDate && new Date(estimatedReadyDate).getTime() <= new Date(targetDate).getTime()));
+    // Estimated ready date: for a one-time shortage walk remaining pool futureEntries,
+    // otherwise fall back to seeding today (today + 42 days)
+    let estimatedReadyDate = "";
+    if (worstShortageQty > 0) {
+      if (salesOrderType === "Contract") {
+        // First delivery we can't fill — tell them when that is
+        estimatedReadyDate = firstProblemDate;
+      } else {
+        // Walk what's left in the pool to find earliest date enough lbs accumulate
+        let running = pool.readyLbs;
+        for (const entry of pool.futureEntries) {
+          running += entry.lbs;
+          if (running >= qtyNeededInLbs) { estimatedReadyDate = entry.readyDate; break; }
+        }
+        if (!estimatedReadyDate) estimatedReadyDate = addDays(today, 42);
+      }
+    }
+
+    const towersNeeded = qtyNeededInLbs > 0 ? Math.ceil(qtyNeededInLbs / avgLbsPerTower) : 0;
+    const newTowersToPlant = worstShortageLbs > 0 ? Math.ceil(worstShortageLbs / avgLbsPerTower) : 0;
+    const deliveryFeasible = qtyNeeded > 0 && worstShortageQty === 0;
 
     return {
-      availableQty,
-      shortageQty,
+      availableQty: firstAvailableQty,
+      shortageQty: worstShortageQty,
       towersNeeded,
       pipelineTowers,
       newTowersToPlant,
-      estimatedReadyDate: shortageQty === 0 ? "" : estimatedReadyDate,
+      estimatedReadyDate: worstShortageQty === 0 ? "" : estimatedReadyDate,
       deliveryFeasible,
-      unitLabel: getUnitLabel(salesUnitType),
+      unitLabel,
       qtyNeededInLbs,
     };
   }, [
     salesCrop,
     salesQuantityNeeded,
     salesDeliveryDate,
-    inventoryByCrop,
-    salesUnitType,
-    salesOrderType,
     salesContractStartDate,
+    salesContractEndDate,
+    salesFrequency,
+    salesOrderType,
+    salesUnitType,
+    inventoryByCrop,
     salesOrders,
     editingSalesOrderRowNumber,
   ]);

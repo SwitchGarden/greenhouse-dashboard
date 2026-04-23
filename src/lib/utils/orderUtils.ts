@@ -29,3 +29,9 @@ export const getOrderType = (row: SalesOrderRow): string =>
 
 export const getOrderFrequency = (row: SalesOrderRow): string =>
   row.frequency || row.Frequency || "";
+
+export const getOrderContractStartDate = (row: SalesOrderRow): string =>
+  row.contractStartDate || row["Contract Start Date"] || "";
+
+export const getOrderContractEndDate = (row: SalesOrderRow): string =>
+  row.contractEndDate || row["Contract End Date"] || "";

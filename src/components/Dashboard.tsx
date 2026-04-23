@@ -344,8 +344,11 @@ export function Dashboard({
             <MiniMetric label="Towers Needed" value={salesPlanner.towersNeeded} />
             <MiniMetric label="Pipeline Towers" value={salesPlanner.pipelineTowers} />
             <MiniMetric label="New Towers To Plant" value={salesPlanner.newTowersToPlant} />
-            <MiniMetric label="Estimated Ready Date" value={salesPlanner.estimatedReadyDate || "-"} />
-            <MiniMetric label="Feasible" value={salesPlanner.deliveryFeasible ? "Yes" : "No"} />
+            <MiniMetric
+              label={salesOrderType === "Contract" ? "First Problem Delivery" : "Earliest Delivery Date"}
+              value={salesPlanner.estimatedReadyDate ? formatDateDisplay(salesPlanner.estimatedReadyDate) : salesPlanner.deliveryFeasible ? "Can Fulfill" : "-"}
+            />
+            <MiniMetric label="Feasible" value={salesPlanner.deliveryFeasible ? "Yes" : salesPlanner.shortageQty > 0 ? "No" : "-"} />
           </MetricGrid>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
