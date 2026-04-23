@@ -57,6 +57,8 @@ type GroupedOrder = {
   customer: string;
   dueDate: string;
   status: string;
+  cropSummary: string;
+  isOverdue: boolean;
   items: SalesOrderRow[];
   totalNewTowers: number;
 };
@@ -153,6 +155,7 @@ export type DashboardProps = {
   cancelEditSalesOrder: () => void;
   handleSaveOrder: () => void;
   handleOrderStatusChange: (rowNumber: number, status: string) => void;
+  handleGroupStatusChange: (groupKey: string, status: string) => void;
   startEditSalesOrder: (order: SalesOrderRow) => void;
   handleCancelSalesOrder: (rowNumber: number) => void;
   removeDraftOrderLine: (id: string) => void;
@@ -210,6 +213,7 @@ export function Dashboard({
   cancelEditSalesOrder,
   handleSaveOrder,
   handleOrderStatusChange,
+  handleGroupStatusChange,
   startEditSalesOrder,
   handleCancelSalesOrder,
   removeDraftOrderLine,
@@ -424,9 +428,7 @@ export function Dashboard({
               <select value={savedOrderStatusFilter} onChange={(e) => setSavedOrderStatusFilter(e.target.value)} style={inputStyle}>
                 <option value="All">All</option>
                 {uniqueOrderStatuses.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
+                  <option key={item} value={item}>{item}</option>
                 ))}
               </select>
             </Field>
@@ -435,9 +437,7 @@ export function Dashboard({
               <select value={savedOrderCropFilter} onChange={(e) => setSavedOrderCropFilter(e.target.value)} style={inputStyle}>
                 <option value="All">All</option>
                 {uniqueCrops.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
+                  <option key={item} value={item}>{item}</option>
                 ))}
               </select>
             </Field>
@@ -446,9 +446,7 @@ export function Dashboard({
               <select value={savedOrderCustomerFilter} onChange={(e) => setSavedOrderCustomerFilter(e.target.value)} style={inputStyle}>
                 <option value="All">All</option>
                 {uniqueCustomers.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
+                  <option key={item} value={item}>{item}</option>
                 ))}
               </select>
             </Field>
@@ -461,14 +459,14 @@ export function Dashboard({
             </Field>
           </FormGrid>
 
-          <div style={{ maxHeight: 290, overflowY: "auto", overflowX: "auto" }}>
+          <div style={{ maxHeight: 340, overflowY: "auto", overflowX: "auto" }}>
             <table style={tableStyle}>
               <thead>
                 <tr>
                   <th style={thStyle}></th>
                   <th style={thStyle}>Customer</th>
                   <th style={thStyle}>Delivery</th>
-                  <th style={thStyle}>Items</th>
+                  <th style={thStyle}>Crops</th>
                   <th style={thStyle}>New Towers</th>
                   <th style={thStyle}>Status</th>
                 </tr>
@@ -476,15 +474,13 @@ export function Dashboard({
               <tbody>
                 {groupedSavedOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={tdStyle}>
-                      No saved orders.
-                    </td>
+                    <td colSpan={6} style={tdStyle}>No saved orders.</td>
                   </tr>
                 ) : (
                   groupedSavedOrders.flatMap((group) => {
                     const expanded = !!expandedSavedOrderGroups[group.key];
                     const summaryRow = (
-                      <tr key={group.key}>
+                      <tr key={group.key} style={group.isOverdue ? { background: "#fef2f2" } : undefined}>
                         <td style={tdStyle}>
                           <button
                             onClick={() =>
@@ -500,31 +496,76 @@ export function Dashboard({
                             {expanded ? "▾" : "▸"}
                           </button>
                         </td>
-                        <td style={tdStyle}>{group.customer}</td>
-                        <td style={tdStyle}>{formatDateDisplay(group.dueDate)}</td>
-                        <td style={tdStyle}>{group.items.length}</td>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{group.customer}</td>
+                        <td style={tdStyle}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            {formatDateDisplay(group.dueDate)}
+                            {group.isOverdue && (
+                              <span style={{ fontSize: 10, fontWeight: 700, background: "#dc2626", color: "white", padding: "1px 6px", borderRadius: 8 }}>
+                                OVERDUE
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ ...tdStyle, fontSize: 12, color: "#475569" }}>{group.cropSummary}</td>
                         <td style={tdStyle}>{group.totalNewTowers}</td>
-                        <td style={tdStyle}>{group.status}</td>
+                        <td style={tdStyle}>
+                          <select
+                            value={group.status || "Planned"}
+                            onChange={(e) => handleGroupStatusChange(group.key, e.target.value)}
+                            style={{
+                              ...compactInputStyle,
+                              fontWeight: 600,
+                              background: {
+                                Planned: "#f1f5f9",
+                                "In Progress": "#dbeafe",
+                                Harvested: "#dcfce7",
+                                Packed: "#d1fae5",
+                                Completed: "#bbf7d0",
+                                Cancelled: "#fee2e2",
+                              }[group.status] || "#f1f5f9",
+                              color: {
+                                Planned: "#475569",
+                                "In Progress": "#1d4ed8",
+                                Harvested: "#15803d",
+                                Packed: "#166534",
+                                Completed: "#14532d",
+                                Cancelled: "#dc2626",
+                              }[group.status] || "#475569",
+                            }}
+                            aria-label={`Bulk status for ${group.customer} order`}
+                          >
+                            <option value="Planned">Planned</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Harvested">Harvested</option>
+                            <option value="Packed">Packed</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Cancelled">Cancelled</option>
+                          </select>
+                        </td>
                       </tr>
                     );
 
                     if (!expanded) return [summaryRow];
 
                     const detailRows = group.items.map((order) => (
-                      <tr key={`${group.key}-${order.rowNumber}`}>
+                      <tr key={`${group.key}-${order.rowNumber}`} style={{ background: "#f8fafc" }}>
                         <td style={tdStyle}></td>
                         <td style={{ ...tdStyle, paddingLeft: 24 }} colSpan={2}>
-                          {getOrderCrop(order)} — {getOrderUnitType(order)} × {getOrderQuantityNeeded(order)}
+                          <span style={{ fontWeight: 500 }}>{getOrderCrop(order)}</span>
+                          <span style={{ color: "#64748b" }}> — {getOrderUnitType(order)} × {getOrderQuantityNeeded(order)}</span>
+                          <span style={{ marginLeft: 8, fontSize: 11, color: "#94a3b8" }}>
+                            {getOrderType(order)}{getOrderFrequency(order) ? ` / ${getOrderFrequency(order)}` : ""}
+                          </span>
                         </td>
-                        <td style={tdStyle}>{getOrderType(order)}{getOrderFrequency(order) ? ` / ${getOrderFrequency(order)}` : ""}</td>
                         <td style={tdStyle}>{getOrderNewTowersToPlant(order)}</td>
-                        <td style={tdStyle}>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <td colSpan={2} style={tdStyle}>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                             <select
                               value={getOrderStatus(order) || "Planned"}
                               onChange={(e) => handleOrderStatusChange(order.rowNumber, e.target.value)}
                               style={compactInputStyle}
-                              aria-label={`Order status for ${getOrderCrop(order)} - ${group.customer}`}
+                              aria-label={`Status for ${getOrderCrop(order)} - ${group.customer}`}
                             >
                               <option value="Planned">Planned</option>
                               <option value="In Progress">In Progress</option>
@@ -534,7 +575,12 @@ export function Dashboard({
                               <option value="Cancelled">Cancelled</option>
                             </select>
                             <button onClick={() => startEditSalesOrder(order)} style={primaryButtonStyle}>Edit</button>
-                            <button onClick={() => handleCancelSalesOrder(order.rowNumber)} style={secondaryButtonStyle}>Cancel</button>
+                            <button
+                              onClick={() => handleCancelSalesOrder(order.rowNumber)}
+                              style={{ ...secondaryButtonStyle, marginLeft: 8, color: "#dc2626", borderColor: "#fca5a5" }}
+                            >
+                              Cancel
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -547,7 +593,7 @@ export function Dashboard({
             </table>
           </div>
           <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-            Orders marked Completed or Cancelled are removed from this section. Recurring orders stay visible for future dates until each occurrence is completed.
+            Orders marked Completed or Cancelled are removed from this section. Changing status on the summary row updates all items in that delivery at once.
           </div>
         </Panel>
       </div>

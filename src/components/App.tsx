@@ -527,17 +527,21 @@ export default function App() {
 
 
   const groupedSavedOrders = useMemo(() => {
-    const groups = new Map<string, { key: string; customer: string; dueDate: string; status: string; items: SalesOrderRow[]; totalNewTowers: number }>();
+    const STATUS_RANK: Record<string, number> = {
+      "planned": 0, "in progress": 1, "harvested": 2, "packed": 3, "completed": 4, "cancelled": 5,
+    };
+    const today = formatDateInput(new Date());
+    const groups = new Map<string, { key: string; customer: string; dueDate: string; status: string; cropSummary: string; isOverdue: boolean; items: SalesOrderRow[]; totalNewTowers: number }>();
 
     filteredSavedOrders.forEach((order) => {
       const customer = getOrderCustomer(order) || "Unknown Customer";
       const dueDate = getOrderRequestedDeliveryDate(order) || "";
       const key = `${customer}__${dueDate}`;
       const current = groups.get(key) || {
-        key,
-        customer,
-        dueDate,
+        key, customer, dueDate,
         status: getOrderStatus(order) || "Planned",
+        cropSummary: "",
+        isOverdue: false,
         items: [],
         totalNewTowers: 0,
       };
@@ -545,6 +549,21 @@ export default function App() {
       current.totalNewTowers += toNumber(getOrderNewTowersToPlant(order));
       groups.set(key, current);
     });
+
+    for (const group of groups.values()) {
+      const statuses = group.items.map(i => getOrderStatus(i) || "Planned");
+      group.status = statuses.reduce((worst, curr) => {
+        return (STATUS_RANK[normalizeStatus(curr)] ?? 0) < (STATUS_RANK[normalizeStatus(worst)] ?? 0) ? curr : worst;
+      }, statuses[0]);
+
+      const uniqueCrops = [...new Set(group.items.map(i => getOrderCrop(i)).filter(Boolean))];
+      group.cropSummary = uniqueCrops.length <= 4
+        ? uniqueCrops.join(", ")
+        : `${uniqueCrops.slice(0, 3).join(", ")} +${uniqueCrops.length - 3} more`;
+
+      const notDone = !["completed", "cancelled", "packed", "harvested"].includes(normalizeStatus(group.status));
+      group.isOverdue = !!group.dueDate && group.dueDate < today && notDone;
+    }
 
     return Array.from(groups.values()).sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
   }, [filteredSavedOrders]);
@@ -1362,12 +1381,7 @@ const overdueOrders = useMemo(() => {
 
   const handleOrderStatusChange = async (rowNumber: number, status: string) => {
     try {
-      const result = await postToBackend({
-        action: "updateOrderStatus",
-        rowNumber,
-        status,
-      });
-
+      const result = await postToBackend({ action: "updateOrderStatus", rowNumber, status });
       if (result.ok) {
         await loadSalesOrders();
       } else {
@@ -1375,6 +1389,19 @@ const overdueOrders = useMemo(() => {
       }
     } catch (error) {
       console.error("handleOrderStatusChange error:", error);
+    }
+  };
+
+  const handleGroupStatusChange = async (groupKey: string, status: string) => {
+    const group = groupedSavedOrders.find((g) => g.key === groupKey);
+    if (!group) return;
+    try {
+      await Promise.all(
+        group.items.map((item) => postToBackend({ action: "updateOrderStatus", rowNumber: item.rowNumber, status }))
+      );
+      await loadSalesOrders();
+    } catch (error) {
+      console.error("handleGroupStatusChange error:", error);
     }
   };
 
@@ -2180,6 +2207,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             cancelEditSalesOrder={cancelEditSalesOrder}
             handleSaveOrder={handleSaveOrder}
             handleOrderStatusChange={handleOrderStatusChange}
+            handleGroupStatusChange={handleGroupStatusChange}
             startEditSalesOrder={startEditSalesOrder}
             handleCancelSalesOrder={handleCancelSalesOrder}
             removeDraftOrderLine={removeDraftOrderLine}
