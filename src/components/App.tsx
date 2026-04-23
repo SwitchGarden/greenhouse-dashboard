@@ -195,6 +195,7 @@ const CROP_PROFILES: Record<
   basil: { expectedLbsPerTower: 3.52 },
   thai_basil: { expectedLbsPerTower: 3.52 },
   butterhead: { expectedLbsPerTower: 3.52 },
+  butterleaf: { expectedLbsPerTower: 3.52 },
   brassica: { expectedLbsPerTower: 3.52 },
   cilantro: { expectedLbsPerTower: 6.4 },
   dill: { expectedLbsPerTower: 3.52 },
@@ -239,6 +240,10 @@ const cropAliases: Record<string, string> = {
   wild_fire: "wildfire",
   wildfire: "wildfire",
   oak_leaf: "oakleaf",
+  butterleaf: "butterleaf",
+  butterleaf_lettuce: "butterleaf",
+  butterhead_lettuce: "butterhead",
+  romaine_lettuce: "romaine",
 };
 const validateTowerName = (tower: string): string => {
   if (!tower) return "";
@@ -1060,7 +1065,12 @@ const plantTodayTasks = useMemo(() => {
     if (!dueDate) continue;
     const unitType = getOrderUnitType(order);
     const qtyNeeded = toNumber(getOrderQuantityNeeded(order));
-    const totalLbs = quantityToLbs(unitType, qtyNeeded);
+    let totalLbs = quantityToLbs(unitType, qtyNeeded);
+    // Plants orders: convert plant count to equivalent lbs using crop yield
+    if (unitType === "Plants" && qtyNeeded > 0) {
+      const profile = getCropProfile(cropKey);
+      totalLbs = Math.round(qtyNeeded * (profile.expectedLbsPerTower / HALF_TRAY_SEEDS) * 1000) / 1000;
+    }
     const recipe = SALAD_MIX_RECIPES[cropKey];
     if (recipe && totalLbs > 0) {
       const totalRecipeOz = recipe.reduce((s, c) => s + c.oz, 0);
@@ -1455,7 +1465,12 @@ const overdueOrders = useMemo(() => {
         const dueDate = getOrderRequestedDeliveryDate(row);
         const unitType = getOrderUnitType(row);
         const qtyNeeded = toNumber(getOrderQuantityNeeded(row));
-        const qtyNeededInLbs = quantityToLbs(unitType, qtyNeeded);
+        const alertNormalized = cropAliases[normalizeCropKey(cropName)] || normalizeCropKey(cropName);
+        let qtyNeededInLbs = quantityToLbs(unitType, qtyNeeded);
+        if (unitType === "Plants" && qtyNeeded > 0) {
+          const profile = getCropProfile(alertNormalized);
+          qtyNeededInLbs = Math.round(qtyNeeded * (profile.expectedLbsPerTower / HALF_TRAY_SEEDS) * 1000) / 1000;
+        }
         const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
 
         const pool =
@@ -1599,7 +1614,12 @@ const overdueOrders = useMemo(() => {
       const dueDate = getOrderRequestedDeliveryDate(row);
       const unitType = getOrderUnitType(row);
       const qtyNeeded = toNumber(getOrderQuantityNeeded(row));
-      const qtyNeededInLbs = quantityToLbs(unitType, qtyNeeded);
+      const normalizedCrop = cropAliases[normalizeCropKey(cropName)] || normalizeCropKey(cropName);
+      let qtyNeededInLbs = quantityToLbs(unitType, qtyNeeded);
+      if (unitType === "Plants" && qtyNeeded > 0) {
+        const profile = getCropProfile(normalizedCrop);
+        qtyNeededInLbs = Math.round(qtyNeeded * (profile.expectedLbsPerTower / HALF_TRAY_SEEDS) * 1000) / 1000;
+      }
       const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
 
       const pool =
