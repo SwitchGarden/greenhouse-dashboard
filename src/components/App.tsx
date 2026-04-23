@@ -3731,17 +3731,17 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   <td style={tdStyle}>{task.orders.join(", ")}</td>
                   <td style={tdStyle}>
                     <select
-                      value={plantingTowerType[task.crop] || "Low Density"}
+                      value={plantingTrayType[task.crop] || "Full Tray"}
                       onChange={(e) =>
-                        setPlantingTowerType((prev) => ({
+                        setPlantingTrayType((prev) => ({
                           ...prev,
-                          [task.crop]: e.target.value,
+                          [task.crop]: e.target.value as "Full Tray" | "Half Tray",
                         }))
                       }
                       style={compactInputStyle}
                     >
-                      <option value="Low Density">Low Density</option>
-                      <option value="High Density">High Density</option>
+                      <option value="Full Tray">Full Tray (88 seeds)</option>
+                      <option value="Half Tray">Half Tray (44 seeds)</option>
                     </select>
                   </td>
                   <td style={tdStyle}>
