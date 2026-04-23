@@ -1867,6 +1867,18 @@ const overdueOrders = useMemo(() => {
       return;
     }
 
+    const towerErr = validateTowerName(inventoryTower);
+    if (towerErr) { setInventoryMessage(towerErr); return; }
+
+    if (inventorySeededDate && inventoryTransplantDate && inventoryTransplantDate < inventorySeededDate) {
+      setInventoryMessage("Transplant date cannot be before seeded date. Check for a typo (e.g. month/day swapped).");
+      return;
+    }
+    if (inventoryTransplantDate && inventoryEstimatedReadyDate && inventoryEstimatedReadyDate < inventoryTransplantDate) {
+      setInventoryMessage("Estimated ready date cannot be before transplant date.");
+      return;
+    }
+
     try {
       setInventorySaving(true);
       setInventoryMessage("");
@@ -2068,6 +2080,18 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
     if (!editInventoryTower || !editInventoryCrop) {
       setEditInventoryMessage("Please enter tower and crop.");
+      return;
+    }
+
+    const editTowerErr = validateTowerName(editInventoryTower);
+    if (editTowerErr) { setEditInventoryMessage(editTowerErr); return; }
+
+    if (editInventorySeededDate && editInventoryTransplantDate && editInventoryTransplantDate < editInventorySeededDate) {
+      setEditInventoryMessage("Transplant date cannot be before seeded date. Check for a typo (e.g. month/day swapped).");
+      return;
+    }
+    if (editInventoryTransplantDate && editInventoryEstimatedReadyDate && editInventoryEstimatedReadyDate < editInventoryTransplantDate) {
+      setEditInventoryMessage("Estimated ready date cannot be before transplant date.");
       return;
     }
 
