@@ -2746,6 +2746,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     setSeededTransplantMessage("");
     try {
       const maxPods = getTowerMaxPods(seededTransplantTowerType);
+      const sourceItem = seededInventory.find((i) => i.rowNumber === seededTransplantRowNumber);
+      const existingSeededDate = sourceItem ? getInventorySeededDate(sourceItem) : "";
       const result = await postToBackend({
         action: "updateProductionInventoryRow",
         rowNumber: seededTransplantRowNumber,
@@ -2753,7 +2755,9 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         towerType: seededTransplantTowerType,
         maxPods,
         activePods: maxPods,
+        crop: sourceItem ? getInventoryCrop(sourceItem) : "",
         stage: "Transplanted",
+        seededDate: existingSeededDate,
         transplantDate: seededTransplantDate,
         estimatedReadyDate: addDays(seededTransplantDate, 21),
       });
@@ -4492,7 +4496,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                               setSeededTransplantMessage("");
                               cancelEditSeededEntry();
                             }}
-                            style={{ ...primaryButtonStyle, background: isTransplanting ? "#64748b" : undefined }}
+                            style={isTransplanting ? { ...primaryButtonStyle, background: "#64748b" } : primaryButtonStyle}
                           >
                             Transplant
                           </button>
