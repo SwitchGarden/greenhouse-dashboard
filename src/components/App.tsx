@@ -658,10 +658,9 @@ export default function App() {
 
   // Sales Planner / Orders
   const [salesCustomer, setSalesCustomer] = useState("");
-  const [salesCrop, setSalesCrop] = useState("");
-  const [salesUnitType, setSalesUnitType] = useState<OrderUnitType>("Lbs");
-  const [salesQuantityNeeded, setSalesQuantityNeeded] = useState("");
-  const [draftOrderLines, setDraftOrderLines] = useState<DraftOrderLine[]>([]);
+  const [draftOrderLines, setDraftOrderLines] = useState<DraftOrderLine[]>(() => [
+    { id: makeId(), crop: "", unitType: "Lbs" as OrderUnitType, quantityNeeded: "" },
+  ]);
   const [editingSalesOrderRowNumber, setEditingSalesOrderRowNumber] = useState<number | null>(null);
   const [salesDeliveryDate, setSalesDeliveryDate] = useState("");
   const [salesNotes, setSalesNotes] = useState("");
@@ -954,12 +953,11 @@ export default function App() {
     return map;
   }, [activeInventory]);
 
-  const currentLineQtyNeeded = toNumber(salesQuantityNeeded);
-  const currentLineQtyInLbs = quantityToLbs(salesUnitType, currentLineQtyNeeded);
-
   const salesPlanner: SalesPlannerResult = useMemo(() => {
-    const qtyNeeded = toNumber(salesQuantityNeeded);
-    const cropName = (salesCrop || "").trim();
+    const activeLine = draftOrderLines.find((l) => l.crop) || draftOrderLines[0];
+    const qtyNeeded = toNumber(activeLine?.quantityNeeded || "");
+    const cropName = (activeLine?.crop || "").trim();
+    const plannerUnitType: OrderUnitType = activeLine?.unitType || "Lbs";
     const cropInventory = inventoryByCrop.get(cropName);
     const targetDate = salesOrderType === "Contract" ? salesContractStartDate : salesDeliveryDate;
 
@@ -975,10 +973,10 @@ export default function App() {
 
     const readyNowLbs = Math.max(0, (cropInventory?.readyNowLbs || 0) - committedSameCropLbs);
     const readyNowPlants = Math.max(0, (cropInventory?.readyNowPlants || 0) - committedSameCropLbs * 16 / 6);
-    const availableQty = availableLbsToUnitQty(salesUnitType, readyNowLbs, readyNowPlants);
+    const availableQty = availableLbsToUnitQty(plannerUnitType, readyNowLbs, readyNowPlants);
     const shortageQty = Math.max(0, qtyNeeded - availableQty);
 
-    const qtyNeededInLbs = quantityToLbs(salesUnitType, qtyNeeded);
+    const qtyNeededInLbs = quantityToLbs(plannerUnitType, qtyNeeded);
     const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropName, 44));
     const towersNeeded = qtyNeededInLbs > 0 ? Math.ceil(qtyNeededInLbs / avgQtyPerTower) : 0;
     const pipelineTowers = cropInventory ? cropInventory.pipelineTowers : 0;
@@ -1010,15 +1008,13 @@ export default function App() {
       newTowersToPlant,
       estimatedReadyDate: shortageQty === 0 ? "" : estimatedReadyDate,
       deliveryFeasible,
-      unitLabel: getUnitLabel(salesUnitType),
+      unitLabel: getUnitLabel(plannerUnitType),
       qtyNeededInLbs,
     };
   }, [
-    salesCrop,
-    salesQuantityNeeded,
+    draftOrderLines,
     salesDeliveryDate,
     inventoryByCrop,
-    salesUnitType,
     salesOrderType,
     salesContractStartDate,
     salesOrders,
@@ -1058,7 +1054,7 @@ export default function App() {
 
 
   const groupedSavedOrders = useMemo(() => {
-    const groups = new Map<string, { key: string; customer: string; dueDate: string; status: string; items: SalesOrderRow[]; totalNewTowers: number }>();
+    const groups = new Map<string, { key: string; customer: string; dueDate: string; status: string; cropSummary: string; isOverdue: boolean; items: SalesOrderRow[]; totalNewTowers: number }>();
 
     filteredSavedOrders.forEach((order) => {
       const customer = getOrderCustomer(order) || "Unknown Customer";
@@ -1069,6 +1065,8 @@ export default function App() {
         customer,
         dueDate,
         status: getOrderStatus(order) || "Planned",
+        cropSummary: "",
+        isOverdue: isOverdue(dueDate),
         items: [],
         totalNewTowers: 0,
       };
@@ -1077,7 +1075,11 @@ export default function App() {
       groups.set(key, current);
     });
 
-    return Array.from(groups.values()).sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
+    const result = Array.from(groups.values()).sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
+    result.forEach((g) => {
+      g.cropSummary = g.items.map((o) => `${getOrderCrop(o)} ×${getOrderQuantityNeeded(o)}`).join(", ");
+    });
+    return result;
   }, [filteredSavedOrders]);
 
  const seededInventory = useMemo(() => {
@@ -1974,32 +1976,35 @@ const overdueOrders = useMemo(() => {
     }
   };
 
-  const addCurrentLineToBatch = () => {
-    if (!salesCrop || !salesQuantityNeeded) {
-      setSalesSaveMessage("Please choose crop, unit, and quantity before adding a line item.");
-      return;
-    }
-    setDraftOrderLines((prev) => [
-      ...prev,
-      { id: makeId(), crop: salesCrop, unitType: salesUnitType, quantityNeeded: salesQuantityNeeded },
-    ]);
-    setSalesCrop("");
-    setSalesUnitType("Lbs");
-    setSalesQuantityNeeded("");
-    setSalesSaveMessage("Line item added to order.");
+  const removeDraftOrderLine = (id: string) => {
+    setDraftOrderLines((prev) => {
+      const next = prev.filter((line) => line.id !== id);
+      return next.length > 0 ? next : [{ id: makeId(), crop: "", unitType: "Lbs" as OrderUnitType, quantityNeeded: "" }];
+    });
   };
 
-  const removeDraftOrderLine = (id: string) => {
-    setDraftOrderLines((prev) => prev.filter((line) => line.id !== id));
+  const addDraftOrderRow = () => {
+    setDraftOrderLines((prev) => [
+      ...prev,
+      { id: makeId(), crop: "", unitType: "Lbs" as OrderUnitType, quantityNeeded: "" },
+    ]);
+  };
+
+  const updateDraftOrderLine = (id: string, field: "crop" | "unitType" | "quantityNeeded", value: string) => {
+    setDraftOrderLines((prev) =>
+      prev.map((line) => (line.id === id ? { ...line, [field]: value } : line))
+    );
   };
 
   const startEditSalesOrder = (order: SalesOrderRow) => {
     setEditingSalesOrderRowNumber(order.rowNumber);
-    setDraftOrderLines([]);
+    setDraftOrderLines([{
+      id: makeId(),
+      crop: getOrderCrop(order),
+      unitType: (getOrderUnitType(order) as OrderUnitType) || "Lbs",
+      quantityNeeded: String(getOrderQuantityNeeded(order) || ""),
+    }]);
     setSalesCustomer(getOrderCustomer(order));
-    setSalesCrop(getOrderCrop(order));
-    setSalesUnitType((getOrderUnitType(order) as OrderUnitType) || "Lbs");
-    setSalesQuantityNeeded(String(getOrderQuantityNeeded(order) || ""));
     setSalesDeliveryDate(formatDateInput(getOrderRequestedDeliveryDate(order)));
     setSalesNotes(order.notes || order.Notes || "");
     setSalesOrderType((getOrderType(order) as "One-Time" | "Contract") || "One-Time");
@@ -2012,16 +2017,13 @@ const overdueOrders = useMemo(() => {
   const cancelEditSalesOrder = () => {
     setEditingSalesOrderRowNumber(null);
     setSalesCustomer("");
-    setSalesCrop("");
-    setSalesUnitType("Lbs");
-    setSalesQuantityNeeded("");
     setSalesDeliveryDate("");
     setSalesNotes("");
     setSalesOrderType("One-Time");
     setSalesFrequency("Weekly");
     setSalesContractStartDate("");
     setSalesContractEndDate("");
-    setDraftOrderLines([]);
+    setDraftOrderLines([{ id: makeId(), crop: "", unitType: "Lbs" as OrderUnitType, quantityNeeded: "" }]);
     setSalesSaveMessage("");
   };
 
@@ -2042,15 +2044,10 @@ const overdueOrders = useMemo(() => {
   };
 
   const handleSaveOrder = async () => {
-    const currentLineValid = !!salesCrop && !!toNumber(salesQuantityNeeded);
-    const lineItems = editingSalesOrderRowNumber
-      ? currentLineValid
-        ? [{ id: makeId(), crop: salesCrop, unitType: salesUnitType, quantityNeeded: salesQuantityNeeded }]
-        : []
-      : [...draftOrderLines, ...(currentLineValid ? [{ id: makeId(), crop: salesCrop, unitType: salesUnitType, quantityNeeded: salesQuantityNeeded }] : [])];
+    const lineItems = draftOrderLines.filter((l) => l.crop && toNumber(l.quantityNeeded) > 0);
 
     if (!salesCustomer || lineItems.length === 0) {
-      setSalesSaveMessage("Please enter customer and at least one line item.");
+      setSalesSaveMessage("Please enter customer and at least one line item with a crop and quantity.");
       return;
     }
 
@@ -2079,13 +2076,14 @@ const overdueOrders = useMemo(() => {
       }
 
       if (editingSalesOrderRowNumber) {
+        const editLine = lineItems[0];
         const result = await postToBackend({
           action: "updateSalesOrderRow",
           rowNumber: editingSalesOrderRowNumber,
           customer: salesCustomer,
-          crop: salesCrop,
-          unitType: salesUnitType,
-          quantityNeeded: toNumber(salesQuantityNeeded),
+          crop: editLine.crop,
+          unitType: editLine.unitType,
+          quantityNeeded: toNumber(editLine.quantityNeeded),
           requestedDeliveryDate: salesOrderType === "Contract" ? salesContractStartDate : salesDeliveryDate,
           availableQty: salesPlanner.availableQty,
           shortageQty: salesPlanner.shortageQty,
@@ -2199,6 +2197,21 @@ const overdueOrders = useMemo(() => {
       }
     } catch (error) {
       console.error("handleOrderStatusChange error:", error);
+    }
+  };
+
+  const handleGroupStatusChange = async (groupKey: string, status: string) => {
+    const group = groupedSavedOrders.find((g) => g.key === groupKey);
+    if (!group) return;
+    try {
+      await Promise.all(
+        group.items.map((order) =>
+          postToBackend({ action: "updateOrderStatus", rowNumber: order.rowNumber, status })
+        )
+      );
+      await loadSalesOrders();
+    } catch (error) {
+      console.error("handleGroupStatusChange error:", error);
     }
   };
 
@@ -3006,6 +3019,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <StatCard label="Pods in Production" value={dashboardStats.podsInProduction} />
             </ResponsiveStatGrid>
 
+            {/* Row 1: Executive Alerts | Sales Planner */}
             <ResponsiveTwoPanelGrid>
               <Panel title="Executive Alerts">
                 <div style={{ maxHeight: 420, overflowY: "auto", overflowX: "auto" }}>
@@ -3020,12 +3034,24 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     <tbody>
                       {executiveAlerts.length === 0 ? (
                         <tr>
-                          <td colSpan={6} style={tdStyle}>No critical alerts right now.</td>
+                          <td colSpan={3} style={tdStyle}>No critical alerts right now.</td>
                         </tr>
                       ) : (
                         executiveAlerts.map((alert, index) => (
                           <tr key={`${alert.title}-${index}`}>
-                            <td style={tdStyle}>{alert.level}</td>
+                            <td style={tdStyle}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{
+                                  display: "inline-block",
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: "50%",
+                                  background: alert.level === "Severe" ? "#ef4444" : alert.level === "Medium" ? "#eab308" : "#94a3b8",
+                                  flexShrink: 0,
+                                }} />
+                                {alert.level}
+                              </div>
+                            </td>
                             <td style={tdStyle}>{alert.title}</td>
                             <td style={tdStyle}>{alert.detail}</td>
                           </tr>
@@ -3036,6 +3062,294 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 </div>
               </Panel>
 
+              <Panel title="Sales Planner / Order Planner">
+                <FormGrid columns={2}>
+                  <Field label="Customer">
+                    <input value={salesCustomer} onChange={(e) => setSalesCustomer(e.target.value)} style={inputStyle} />
+                  </Field>
+
+                  <Field label="Order Type">
+                    <select value={salesOrderType} onChange={(e) => setSalesOrderType(e.target.value as "One-Time" | "Contract")} style={inputStyle}>
+                      <option value="One-Time">One-Time</option>
+                      <option value="Contract">Contract</option>
+                    </select>
+                  </Field>
+
+                  {salesOrderType === "One-Time" ? (
+                    <Field label="Requested Delivery Date">
+                      <input type="date" value={salesDeliveryDate} onChange={(e) => setSalesDeliveryDate(e.target.value)} style={inputStyle} />
+                    </Field>
+                  ) : (
+                    <>
+                      <Field label="Frequency">
+                        <select value={salesFrequency} onChange={(e) => setSalesFrequency(e.target.value)} style={inputStyle}>
+                          <option value="Weekly">Weekly</option>
+                          <option value="Bi-Weekly">Bi-Weekly</option>
+                          <option value="Monthly">Monthly</option>
+                        </select>
+                      </Field>
+                      <Field label="Contract Start Date">
+                        <input type="date" value={salesContractStartDate} onChange={(e) => setSalesContractStartDate(e.target.value)} style={inputStyle} />
+                      </Field>
+                      <Field label="Contract End Date">
+                        <input type="date" value={salesContractEndDate} onChange={(e) => setSalesContractEndDate(e.target.value)} style={inputStyle} />
+                      </Field>
+                    </>
+                  )}
+                </FormGrid>
+
+                <div style={{ marginBottom: 8 }}>
+                  <TableScroll>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>Crop</th>
+                          <th style={thStyle}>Unit</th>
+                          <th style={thStyle}>Qty</th>
+                          <th style={thStyle}>Approx Lbs</th>
+                          <th style={thStyle}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {draftOrderLines.map((line) => (
+                          <tr key={line.id}>
+                            <td style={tdStyle}>
+                              <select
+                                value={line.crop}
+                                onChange={(e) => updateDraftOrderLine(line.id, "crop", e.target.value)}
+                                style={compactInputStyle}
+                              >
+                                <option value="">Select Crop</option>
+                                {uniqueCrops.map((item) => (
+                                  <option key={item} value={item}>{item}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td style={tdStyle}>
+                              <select
+                                value={line.unitType}
+                                onChange={(e) => updateDraftOrderLine(line.id, "unitType", e.target.value)}
+                                style={compactInputStyle}
+                              >
+                                <option value="Lbs">Lbs</option>
+                                <option value="Plants">Plants</option>
+                                <option value="6oz Bag">6oz Bag</option>
+                                <option value="6oz Clamshell">6oz Clamshell</option>
+                                <option value="0.75oz Small Bag">0.75oz Small Bag</option>
+                              </select>
+                            </td>
+                            <td style={tdStyle}>
+                              <input
+                                type="number"
+                                min="0"
+                                value={line.quantityNeeded}
+                                onChange={(e) => updateDraftOrderLine(line.id, "quantityNeeded", e.target.value)}
+                                style={{ ...compactInputStyle, width: 80 }}
+                                placeholder="0"
+                              />
+                            </td>
+                            <td style={tdStyle}>{quantityToLbs(line.unitType, toNumber(line.quantityNeeded))}</td>
+                            <td style={tdStyle}>
+                              {draftOrderLines.length > 1 && (
+                                <button
+                                  onClick={() => removeDraftOrderLine(line.id)}
+                                  style={{ ...secondaryButtonStyle, padding: "4px 8px" }}
+                                >✕</button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </TableScroll>
+                  {!editingSalesOrderRowNumber && (
+                    <button onClick={addDraftOrderRow} style={{ ...secondaryButtonStyle, marginTop: 6 }}>
+                      + Add Row
+                    </button>
+                  )}
+                </div>
+
+                <Field label="Notes">
+                  <textarea value={salesNotes} onChange={(e) => setSalesNotes(e.target.value)} style={textareaStyle} />
+                </Field>
+
+                <MetricGrid>
+                  <MiniMetric label="Available Lbs" value={salesPlanner.availableQty} />
+                  <MiniMetric label="Shortage Lbs" value={salesPlanner.shortageQty} />
+                  <MiniMetric label="Total Order Lbs" value={salesPlanner.qtyNeededInLbs} />
+                  <MiniMetric label="Towers Needed" value={salesPlanner.towersNeeded} />
+                  <MiniMetric label="Pipeline Towers" value={salesPlanner.pipelineTowers} />
+                  <MiniMetric label="New Towers To Plant" value={salesPlanner.newTowersToPlant} />
+                  <MiniMetric
+                    label={salesOrderType === "Contract" ? "First Problem Delivery" : "Earliest Delivery Date"}
+                    value={salesPlanner.estimatedReadyDate ? formatDateDisplay(salesPlanner.estimatedReadyDate) : salesPlanner.deliveryFeasible ? "Can Fulfill" : "-"}
+                  />
+                  <MiniMetric label="Feasible" value={salesPlanner.deliveryFeasible ? "Yes" : salesPlanner.shortageQty > 0 ? "No" : "-"} />
+                </MetricGrid>
+
+                {editingSalesOrderRowNumber && (
+                  <div style={{ marginBottom: 14 }}>
+                    <button onClick={cancelEditSalesOrder} style={secondaryButtonStyle}>
+                      Cancel Edit
+                    </button>
+                  </div>
+                )}
+
+                <ActionRow message={salesSaveMessage}>
+                  <button onClick={handleSaveOrder} style={primaryButtonStyle} disabled={salesSaving}>
+                    {salesSaving ? "Saving..." : editingSalesOrderRowNumber ? "Update Order" : "Save Order"}
+                  </button>
+                </ActionRow>
+              </Panel>
+            </ResponsiveTwoPanelGrid>
+
+            {/* Row 2: Saved Orders (full width) */}
+            <Panel title="Saved Orders">
+              <FormGrid columns={3}>
+                <Field label="Status Filter">
+                  <select value={savedOrderStatusFilter} onChange={(e) => setSavedOrderStatusFilter(e.target.value)} style={inputStyle}>
+                    <option value="All">All</option>
+                    {uniqueOrderStatuses.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Crop Filter">
+                  <select value={savedOrderCropFilter} onChange={(e) => setSavedOrderCropFilter(e.target.value)} style={inputStyle}>
+                    <option value="All">All</option>
+                    {uniqueCrops.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Customer Filter">
+                  <select value={savedOrderCustomerFilter} onChange={(e) => setSavedOrderCustomerFilter(e.target.value)} style={inputStyle}>
+                    <option value="All">All</option>
+                    {uniqueCustomers.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Due Filter">
+                  <select value={savedOrderDueFilter} onChange={(e) => setSavedOrderDueFilter(e.target.value as "All" | "Current Week")} style={inputStyle}>
+                    <option value="All">All</option>
+                    <option value="Current Week">Current Week</option>
+                  </select>
+                </Field>
+              </FormGrid>
+              <div style={{ maxHeight: 340, overflowY: "auto", overflowX: "auto" }}>
+                <table style={tableStyle}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}></th>
+                      <th style={thStyle}>Customer</th>
+                      <th style={thStyle}>Delivery</th>
+                      <th style={thStyle}>Crops</th>
+                      <th style={thStyle}>New Towers</th>
+                      <th style={thStyle}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupedSavedOrders.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={tdStyle}>No saved orders.</td>
+                      </tr>
+                    ) : (
+                      groupedSavedOrders.flatMap((group) => {
+                        const expanded = !!expandedSavedOrderGroups[group.key];
+                        const summaryRow = (
+                          <tr key={group.key} style={group.isOverdue ? { background: "#fef2f2" } : undefined}>
+                            <td style={tdStyle}>
+                              <button
+                                onClick={() => setExpandedSavedOrderGroups((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}
+                                style={{ ...secondaryButtonStyle, padding: "6px 10px", minWidth: 38 }}
+                              >
+                                {expanded ? "▾" : "▸"}
+                              </button>
+                            </td>
+                            <td style={{ ...tdStyle, fontWeight: 600 }}>{group.customer}</td>
+                            <td style={tdStyle}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                {formatDateDisplay(group.dueDate)}
+                                {group.isOverdue && (
+                                  <span style={{ fontSize: 10, fontWeight: 700, background: "#dc2626", color: "white", padding: "1px 6px", borderRadius: 8 }}>OVERDUE</span>
+                                )}
+                              </div>
+                            </td>
+                            <td style={{ ...tdStyle, fontSize: 12, color: "#475569" }}>{group.cropSummary}</td>
+                            <td style={tdStyle}>{group.totalNewTowers}</td>
+                            <td style={tdStyle}>
+                              <select
+                                value={group.status || "Planned"}
+                                onChange={(e) => handleGroupStatusChange(group.key, e.target.value)}
+                                style={{
+                                  ...compactInputStyle,
+                                  fontWeight: 600,
+                                  background: ({ Planned: "#f1f5f9", "In Progress": "#dbeafe", Harvested: "#dcfce7", Packed: "#d1fae5", Completed: "#bbf7d0", Cancelled: "#fee2e2" } as Record<string, string>)[group.status] || "#f1f5f9",
+                                  color: ({ Planned: "#475569", "In Progress": "#1d4ed8", Harvested: "#15803d", Packed: "#166534", Completed: "#14532d", Cancelled: "#dc2626" } as Record<string, string>)[group.status] || "#475569",
+                                }}
+                              >
+                                <option value="Planned">Planned</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Harvested">Harvested</option>
+                                <option value="Packed">Packed</option>
+                                <option value="Completed">Completed</option>
+                                <option value="Cancelled">Cancelled</option>
+                              </select>
+                            </td>
+                          </tr>
+                        );
+
+                        if (!expanded) return [summaryRow];
+
+                        const detailRows = group.items.map((order) => (
+                          <tr key={`${group.key}-${order.rowNumber}`} style={{ background: "#f8fafc" }}>
+                            <td style={tdStyle}></td>
+                            <td style={{ ...tdStyle, paddingLeft: 24 }} colSpan={2}>
+                              <span style={{ fontWeight: 500 }}>{getOrderCrop(order)}</span>
+                              <span style={{ color: "#64748b" }}> — {getOrderUnitType(order)} × {getOrderQuantityNeeded(order)}</span>
+                              <span style={{ marginLeft: 8, fontSize: 11, color: "#94a3b8" }}>
+                                {getOrderType(order)}{getOrderFrequency(order) ? ` / ${getOrderFrequency(order)}` : ""}
+                              </span>
+                            </td>
+                            <td style={tdStyle}>{getOrderNewTowersToPlant(order)}</td>
+                            <td colSpan={2} style={tdStyle}>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                <select
+                                  value={getOrderStatus(order) || "Planned"}
+                                  onChange={(e) => handleOrderStatusChange(order.rowNumber, e.target.value)}
+                                  style={compactInputStyle}
+                                >
+                                  <option value="Planned">Planned</option>
+                                  <option value="In Progress">In Progress</option>
+                                  <option value="Harvested">Harvested</option>
+                                  <option value="Packed">Packed</option>
+                                  <option value="Completed">Completed</option>
+                                  <option value="Cancelled">Cancelled</option>
+                                </select>
+                                <button onClick={() => startEditSalesOrder(order)} style={primaryButtonStyle}>Edit</button>
+                                <button
+                                  onClick={() => handleCancelSalesOrder(order.rowNumber)}
+                                  style={{ ...secondaryButtonStyle, color: "#dc2626", borderColor: "#fca5a5" }}
+                                >Cancel</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ));
+
+                        return [summaryRow, ...detailRows];
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+                Orders marked Completed or Cancelled are removed from this section. Changing status on the summary row updates all items in that delivery at once.
+              </div>
+            </Panel>
+
+            {/* Row 3: Short Orders | Seeding Calendar */}
+            <ResponsiveTwoPanelGrid>
               <Panel title="Short Orders / Planting Pressure">
                 <TableScroll>
                   <table style={tableStyle}>
@@ -3071,9 +3385,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   </table>
                 </TableScroll>
               </Panel>
-            </ResponsiveTwoPanelGrid>
-
-            <ResponsiveTwoPanelGrid>
               <Panel title="Seeding Calendar">
                 <TableScroll>
                   <table style={tableStyle}>
@@ -3090,7 +3401,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     <tbody>
                       {seedingCalendar.length === 0 ? (
                         <tr>
-                          <td colSpan={3} style={tdStyle}>No seeding needed yet.</td>
+                          <td colSpan={6} style={tdStyle}>No seeding needed yet.</td>
                         </tr>
                       ) : (
                         seedingCalendar.flatMap(([weekOf, items]) =>
@@ -3110,345 +3421,74 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   </table>
                 </TableScroll>
               </Panel>
-
-              <Panel title="Sales Planner / Order Planner">
-                <FormGrid columns={2}>
-                  <Field label="Customer">
-                    <input value={salesCustomer} onChange={(e) => setSalesCustomer(e.target.value)} style={inputStyle} />
-                  </Field>
-
-                  <Field label="Current Crop Line">
-                    <select value={salesCrop} onChange={(e) => setSalesCrop(e.target.value)} style={inputStyle}>
-                      <option value="">Select Crop</option>
-                      {uniqueCrops.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  <Field label="Order Type">
-                    <select value={salesOrderType} onChange={(e) => setSalesOrderType(e.target.value as "One-Time" | "Contract")} style={inputStyle}>
-                      <option value="One-Time">One-Time</option>
-                      <option value="Contract">Contract</option>
-                    </select>
-                  </Field>
-
-                  <Field label="Unit Type">
-                    <select value={salesUnitType} onChange={(e) => setSalesUnitType(e.target.value as OrderUnitType)} style={inputStyle}>
-                      <option value="Lbs">Lbs</option>
-                      <option value="Plants">Plants</option>
-                      <option value="6oz Bag">6oz Bag</option>
-                      <option value="6oz Clamshell">6oz Clamshell</option>
-                      <option value="0.75oz Small Bag">0.75oz Small Bag</option>
-                    </select>
-                  </Field>
-
-                  <Field label={salesUnitType === "Plants" ? "Plants Needed" : salesUnitType === "Lbs" ? "Lbs Needed" : `Qty ${salesUnitType}`}>
-                    <input value={salesQuantityNeeded} onChange={(e) => setSalesQuantityNeeded(e.target.value)} style={inputStyle} />
-                  </Field>
-
-                  {salesOrderType === "One-Time" ? (
-                    <Field label="Requested Delivery Date">
-                      <input type="date" value={salesDeliveryDate} onChange={(e) => setSalesDeliveryDate(e.target.value)} style={inputStyle} />
-                    </Field>
-                  ) : (
-                    <>
-                      <Field label="Frequency">
-                        <select value={salesFrequency} onChange={(e) => setSalesFrequency(e.target.value)} style={inputStyle}>
-                          <option value="Weekly">Weekly</option>
-                          <option value="Bi-Weekly">Bi-Weekly</option>
-                          <option value="Monthly">Monthly</option>
-                        </select>
-                      </Field>
-
-                      <Field label="Contract Start Date">
-                        <input type="date" value={salesContractStartDate} onChange={(e) => setSalesContractStartDate(e.target.value)} style={inputStyle} />
-                      </Field>
-
-                      <Field label="Contract End Date">
-                        <input type="date" value={salesContractEndDate} onChange={(e) => setSalesContractEndDate(e.target.value)} style={inputStyle} />
-                      </Field>
-                    </>
-                  )}
-                </FormGrid>
-
-                <Field label="Notes">
-                  <textarea value={salesNotes} onChange={(e) => setSalesNotes(e.target.value)} style={textareaStyle} />
-                </Field>
-
-                <MetricGrid>
-                  <MiniMetric label={`Available ${salesPlanner.unitLabel}`} value={salesPlanner.availableQty} />
-                  <MiniMetric label={`Shortage ${salesPlanner.unitLabel}`} value={salesPlanner.shortageQty} />
-                  <MiniMetric label="Current Line Lbs" value={salesPlanner.qtyNeededInLbs} />
-                  <MiniMetric label="Towers Needed" value={salesPlanner.towersNeeded} />
-                  <MiniMetric label="Pipeline Towers" value={salesPlanner.pipelineTowers} />
-                  <MiniMetric label="New Towers To Plant" value={salesPlanner.newTowersToPlant} />
-                  <MiniMetric label="Estimated Ready Date" value={salesPlanner.estimatedReadyDate || "-"} />
-                  <MiniMetric label="Feasible" value={salesPlanner.deliveryFeasible ? "Yes" : "No"} />
-                </MetricGrid>
-
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-                  {!editingSalesOrderRowNumber && (
-                    <button onClick={addCurrentLineToBatch} style={secondaryButtonStyle}>
-                      Add Line Item
-                    </button>
-                  )}
-                  {editingSalesOrderRowNumber ? (
-                    <button onClick={cancelEditSalesOrder} style={secondaryButtonStyle}>
-                      Cancel Edit
-                    </button>
-                  ) : null}
-                </div>
-
-                {(draftOrderLines.length > 0 || editingSalesOrderRowNumber) && (
-                  <TableScroll>
-                    <table style={tableStyle}>
-                      <thead>
-                        <tr>
-                          <th style={thStyle}>Crop</th>
-                          <th style={thStyle}>Unit</th>
-                          <th style={thStyle}>Qty</th>
-                          <th style={thStyle}>Approx Lbs</th>
-                          {!editingSalesOrderRowNumber && <th style={thStyle}>Action</th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {draftOrderLines.map((line) => (
-                          <tr key={line.id}>
-                            <td style={tdStyle}>{line.crop}</td>
-                            <td style={tdStyle}>{line.unitType}</td>
-                            <td style={tdStyle}>{line.quantityNeeded}</td>
-                            <td style={tdStyle}>{quantityToLbs(line.unitType, toNumber(line.quantityNeeded))}</td>
-                            {!editingSalesOrderRowNumber && (
-                              <td style={tdStyle}>
-                                <button onClick={() => removeDraftOrderLine(line.id)} style={secondaryButtonStyle}>Remove</button>
-                              </td>
-                            )}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </TableScroll>
-                )}
-
-                <ActionRow message={salesSaveMessage}>
-                  <button onClick={handleSaveOrder} style={primaryButtonStyle} disabled={salesSaving}>
-                    {salesSaving ? "Saving..." : editingSalesOrderRowNumber ? "Update Order" : "Save Order"}
-                  </button>
-                </ActionRow>
-              </Panel>
             </ResponsiveTwoPanelGrid>
 
-            <div style={sectionStackStyle}>
-              <Panel title="Recent Activity">
-                <FormGrid columns={3}>
-                  <Field label="Mode Filter">
-                    <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} style={inputStyle}>
-                      <option value="All">All</option>
-                      {uniqueModes.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  <Field label="Crop Filter">
-                    <select value={filterCrop} onChange={(e) => setFilterCrop(e.target.value)} style={inputStyle}>
-                      <option value="All">All</option>
-                      {uniqueCrops.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  <Field label="Tower Filter">
-                    <select value={filterTower} onChange={(e) => setFilterTower(e.target.value)} style={inputStyle}>
-                      <option value="All">All</option>
-                      {uniqueTowers.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                </FormGrid>
-
-                <div style={{ maxHeight: 420, overflowY: "auto", overflowX: "auto" }}>
-                  <table style={tableStyle}>
-                    <thead>
+            {/* Row 4: Recent Activity (full width at bottom) */}
+            <Panel title="Recent Activity">
+              <FormGrid columns={3}>
+                <Field label="Mode Filter">
+                  <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} style={inputStyle}>
+                    <option value="All">All</option>
+                    {uniqueModes.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Crop Filter">
+                  <select value={filterCrop} onChange={(e) => setFilterCrop(e.target.value)} style={inputStyle}>
+                    <option value="All">All</option>
+                    {uniqueCrops.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Tower Filter">
+                  <select value={filterTower} onChange={(e) => setFilterTower(e.target.value)} style={inputStyle}>
+                    <option value="All">All</option>
+                    {uniqueTowers.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </Field>
+              </FormGrid>
+              <div style={{ maxHeight: 420, overflowY: "auto", overflowX: "auto" }}>
+                <table style={tableStyle}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Time</th>
+                      <th style={thStyle}>Mode</th>
+                      <th style={thStyle}>Tower</th>
+                      <th style={thStyle}>Crop</th>
+                      <th style={thStyle}>Lbs</th>
+                      <th style={thStyle}>Pods</th>
+                      <th style={thStyle}>Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRecentActivity.length === 0 ? (
                       <tr>
-                        <th style={thStyle}>Time</th>
-                        <th style={thStyle}>Mode</th>
-                        <th style={thStyle}>Tower</th>
-                        <th style={thStyle}>Crop</th>
-                        <th style={thStyle}>Lbs</th>
-                        <th style={thStyle}>Pods</th>
-                        <th style={thStyle}>Note</th>
+                        <td colSpan={7} style={tdStyle}>No recent activity.</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {filteredRecentActivity.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} style={tdStyle}>
-                            No recent activity.
-                          </td>
+                    ) : (
+                      filteredRecentActivity.slice(0, 10).map((row) => (
+                        <tr key={row.rowNumber}>
+                          <td style={tdStyle}>{formatDateTimeDisplay(getStaffTimestamp(row))}</td>
+                          <td style={tdStyle}>{getStaffMode(row)}</td>
+                          <td style={tdStyle}>{getStaffTower(row)}</td>
+                          <td style={tdStyle}>{getStaffCrop(row)}</td>
+                          <td style={tdStyle}>{getStaffLbs(row)}</td>
+                          <td style={tdStyle}>{getStaffPodsChanged(row)}</td>
+                          <td style={tdStyle}>{getStaffNote(row)}</td>
                         </tr>
-                      ) : (
-                        filteredRecentActivity.slice(0, 10).map((row) => (
-                          <tr key={row.rowNumber}>
-                            <td style={tdStyle}>{formatDateTimeDisplay(getStaffTimestamp(row))}</td>
-                            <td style={tdStyle}>{getStaffMode(row)}</td>
-                            <td style={tdStyle}>{getStaffTower(row)}</td>
-                            <td style={tdStyle}>{getStaffCrop(row)}</td>
-                            <td style={tdStyle}>{getStaffLbs(row)}</td>
-                            <td style={tdStyle}>{getStaffPodsChanged(row)}</td>
-                            <td style={tdStyle}>{getStaffNote(row)}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-                  Showing 10 most recent entries.
-                </div>
-              </Panel>
-
-              <Panel title="Saved Orders">
-                <FormGrid columns={3}>
-                  <Field label="Status Filter">
-                    <select value={savedOrderStatusFilter} onChange={(e) => setSavedOrderStatusFilter(e.target.value)} style={inputStyle}>
-                      <option value="All">All</option>
-                      {uniqueOrderStatuses.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  <Field label="Crop Filter">
-                    <select value={savedOrderCropFilter} onChange={(e) => setSavedOrderCropFilter(e.target.value)} style={inputStyle}>
-                      <option value="All">All</option>
-                      {uniqueCrops.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  <Field label="Customer Filter">
-                    <select value={savedOrderCustomerFilter} onChange={(e) => setSavedOrderCustomerFilter(e.target.value)} style={inputStyle}>
-                      <option value="All">All</option>
-                      {uniqueCustomers.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-
-                  <Field label="Due Filter">
-                    <select value={savedOrderDueFilter} onChange={(e) => setSavedOrderDueFilter(e.target.value as "All" | "Current Week")} style={inputStyle}>
-                      <option value="All">All</option>
-                      <option value="Current Week">Current Week</option>
-                    </select>
-                  </Field>
-                </FormGrid>
-
-                <div style={{ maxHeight: 290, overflowY: "auto", overflowX: "auto" }}>
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}></th>
-                        <th style={thStyle}>Customer</th>
-                        <th style={thStyle}>Delivery</th>
-                        <th style={thStyle}>Items</th>
-                        <th style={thStyle}>New Towers</th>
-                        <th style={thStyle}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {groupedSavedOrders.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} style={tdStyle}>
-                            No saved orders.
-                          </td>
-                        </tr>
-                      ) : (
-                        groupedSavedOrders.flatMap((group) => {
-                          const expanded = !!expandedSavedOrderGroups[group.key];
-                          const summaryRow = (
-                            <tr key={group.key}>
-                              <td style={tdStyle}>
-                                <button
-                                  onClick={() =>
-                                    setExpandedSavedOrderGroups((prev) => ({
-                                      ...prev,
-                                      [group.key]: !prev[group.key],
-                                    }))
-                                  }
-                                  style={{ ...secondaryButtonStyle, padding: "6px 10px", minWidth: 38 }}
-                                >
-                                  {expanded ? "▾" : "▸"}
-                                </button>
-                              </td>
-                              <td style={tdStyle}>{group.customer}</td>
-                              <td style={tdStyle}>{formatDateDisplay(group.dueDate)}</td>
-                              <td style={tdStyle}>{group.items.length}</td>
-                              <td style={tdStyle}>{group.totalNewTowers}</td>
-                              <td style={tdStyle}>{group.status}</td>
-                            </tr>
-                          );
-
-                          if (!expanded) return [summaryRow];
-
-                          const detailRows = group.items.map((order) => (
-                            <tr key={`${group.key}-${order.rowNumber}`}>
-                              <td style={tdStyle}></td>
-                              <td style={{ ...tdStyle, paddingLeft: 24 }} colSpan={2}>
-                                {getOrderCrop(order)} — {getOrderUnitType(order)} × {getOrderQuantityNeeded(order)}
-                              </td>
-                              <td style={tdStyle}>{getOrderType(order)}{getOrderFrequency(order) ? ` / ${getOrderFrequency(order)}` : ""}</td>
-                              <td style={tdStyle}>{getOrderNewTowersToPlant(order)}</td>
-                              <td style={tdStyle}>
-                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                  <select
-                                    value={getOrderStatus(order) || "Planned"}
-                                    onChange={(e) => handleOrderStatusChange(order.rowNumber, e.target.value)}
-                                    style={compactInputStyle}
-                                  >
-                                    <option value="Planned">Planned</option>
-                                    <option value="In Progress">In Progress</option>
-                                    <option value="Harvested">Harvested</option>
-                                    <option value="Packed">Packed</option>
-                                    <option value="Completed">Completed</option>
-                                    <option value="Cancelled">Cancelled</option>
-                                  </select>
-                                  <button onClick={() => startEditSalesOrder(order)} style={primaryButtonStyle}>Edit</button>
-                                  <button onClick={() => handleCancelSalesOrder(order.rowNumber)} style={secondaryButtonStyle}>Cancel</button>
-                                </div>
-                              </td>
-                            </tr>
-                          ));
-
-                          return [summaryRow, ...detailRows];
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-                  Orders marked Completed or Cancelled are removed from this section. Recurring orders stay visible for future dates until each occurrence is completed.
-                </div>
-              </Panel>
-            </div>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+                Showing 10 most recent entries.
+              </div>
+            </Panel>
           </div>
         )}
 
