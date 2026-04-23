@@ -628,6 +628,8 @@ export function Dashboard({
                               }))
                             }
                             style={{ ...secondaryButtonStyle, padding: "6px 10px", minWidth: 38 }}
+                            aria-label={expanded ? `Collapse ${group.customer} order` : `Expand ${group.customer} order`}
+                            aria-expanded={expanded}
                           >
                             {expanded ? "▾" : "▸"}
                           </button>
@@ -656,6 +658,7 @@ export function Dashboard({
                               value={getOrderStatus(order) || "Planned"}
                               onChange={(e) => handleOrderStatusChange(order.rowNumber, e.target.value)}
                               style={compactInputStyle}
+                              aria-label={`Order status for ${getOrderCrop(order)} - ${group.customer}`}
                             >
                               <option value="Planned">Planned</option>
                               <option value="In Progress">In Progress</option>

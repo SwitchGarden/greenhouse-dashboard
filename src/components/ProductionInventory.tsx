@@ -394,6 +394,7 @@ export function ProductionInventory({
                           value={getInventoryStatus(item) || "Active"}
                           onChange={(e) => handleProductionStatusChange(item.rowNumber, e.target.value)}
                           style={compactInputStyle}
+                          aria-label={`Status for tower ${getInventoryTower(item)}`}
                         >
                           <option value="Active">Active</option>
                           <option value="Harvested">Harvested</option>
@@ -404,7 +405,7 @@ export function ProductionInventory({
                       </td>
                       <td style={tdStyle}>{getInventoryNotes(item)}</td>
                       <td style={tdStyle}>
-                        <button onClick={() => handleEditInventory(item)} style={primaryButtonStyle}>
+                        <button onClick={() => handleEditInventory(item)} style={primaryButtonStyle} aria-label={`Edit ${getInventoryCrop(item)} in tower ${getInventoryTower(item)}`}>
                           Edit
                         </button>
                       </td>
