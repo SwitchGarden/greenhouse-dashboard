@@ -137,7 +137,7 @@ const HALF_TRAY_SEEDS = 44;   // one half tray → 1 Low Density tower
 
 const REPEAT_HARVEST_CROPS = new Set([
   "arugula", "basil", "thai_basil", "mint", "kale", "brassica",
-  "red_mizuna", "green_mizuna", "swiss_chard", "dill", "five_star", "wild_fire",
+  "red_mizuna", "green_mizuna", "swiss_chard", "dill", "five_star", "wildfire",
 ]);
 
 // Salad mix recipes: crop key → array of { crop (normalized key), oz per clamshell }
@@ -183,7 +183,11 @@ const getUnitLabel = (unitType: string) => {
   return "Lbs";
 };
 
-const isRepeatHarvestCrop = (crop: string) => REPEAT_HARVEST_CROPS.has(normalizeCropKey(crop));
+const isRepeatHarvestCrop = (crop: string) => {
+  const normalized = normalizeCropKey(crop);
+  const canonical = cropAliases[normalized] || normalized;
+  return REPEAT_HARVEST_CROPS.has(canonical);
+};
 
 const CROP_PROFILES: Record<
   string,
@@ -240,10 +244,18 @@ const cropAliases: Record<string, string> = {
   wild_fire: "wildfire",
   wildfire: "wildfire",
   oak_leaf: "oakleaf",
+  oakleaf_lettuce: "oakleaf",
   butterleaf: "butterleaf",
   butterleaf_lettuce: "butterleaf",
+  butter_leaf: "butterleaf",
+  butter_lettuce: "butterleaf",
   butterhead_lettuce: "butterhead",
+  bibb: "butterhead",
+  bibb_lettuce: "butterhead",
+  boston_lettuce: "butterhead",
   romaine_lettuce: "romaine",
+  cos: "romaine",
+  cos_lettuce: "romaine",
 };
 const validateTowerName = (tower: string): string => {
   if (!tower) return "";
