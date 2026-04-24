@@ -4242,25 +4242,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
      {activePage === "staffDaily" && (
   <div style={sectionStackStyle}>
-    <Panel title="Staff Daily Overview">
-      <MetricGrid>
-        <MiniMetric label="Plant Tasks" value={plantTodayTasks.length} />
-        <MiniMetric label="Seeded Entries" value={seededInventory.length} />
-        <MiniMetric label="Ready to Harvest" value={readyToHarvestInventory.length} />
-        <MiniMetric label="Transplant Tasks" value={transplantTodayTasks.length} />
-        <MiniMetric label="Harvest Tasks" value={harvestTodayTasks.length} />
-        <MiniMetric label="Pack Tasks" value={packTodayTasks.length} />
-        <MiniMetric label="Overdue Orders" value={overdueOrders.length} />
-        <MiniMetric label="Harvested This Week (lbs)" value={weeklyMetrics.harvestedThisWeek} />
-        <MiniMetric label="Scrapped This Week (lbs)" value={weeklyMetrics.scrappedThisWeek} />
-        <MiniMetric label="Pods in Production" value={dashboardStats.podsInProduction} />
-        <MiniMetric label="Available Towers" value={emptyTowers.length} />
-        <MiniMetric label="Given to Kitchen (lbs)" value={dashboardStats.kitchenLbs} />
-        <MiniMetric label="Given to Pantry (lbs)" value={dashboardStats.pantryLbs} />
-      </MetricGrid>
-      <div style={{ marginTop: 12, fontSize: 14, color: "#334155" }}>{dailyMessage}</div>
-    </Panel>
-
     <Panel title="Crop Lookup">
       <FormGrid columns={2}>
         <Field label="Select Crop">
