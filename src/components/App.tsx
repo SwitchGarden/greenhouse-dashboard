@@ -4645,9 +4645,10 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                       value={qhQty}
                       onChange={(e) => setQhQty(e.target.value)}
                       style={inputStyle}
-                      placeholder="e.g. 2.5"
+                      placeholder="auto-filled from pods"
                       autoFocus
                     />
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>auto-estimated — edit if actual differs</div>
                   </Field>
                   <Field label="Unit">
                     <select value={qhUnit} onChange={(e) => setQhUnit(e.target.value as OrderUnitType)} style={inputStyle}>
@@ -4662,7 +4663,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     <input
                       type="number"
                       value={qhPods}
-                      onChange={(e) => setQhPods(e.target.value)}
+                      onChange={(e) => {
+                        const pods = e.target.value;
+                        setQhPods(pods);
+                        const est = calculateExpectedLbs(getInventoryCrop(sel), toNumber(pods), getInventoryTowerType(sel));
+                        if (est > 0) setQhQty(String(est));
+                      }}
                       style={inputStyle}
                       placeholder={String(activePods)}
                     />
