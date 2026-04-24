@@ -3361,6 +3361,13 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           margin-left: 7px;
           vertical-align: middle;
         }
+        @media (max-width: 640px) {
+          table th, table td { padding: 8px 6px !important; font-size: 13px !important; }
+          .gh-subtitle { display: none; }
+        }
+        @media (max-width: 400px) {
+          table th, table td { padding: 6px 4px !important; font-size: 12px !important; }
+        }
       `}</style>
       <div style={containerStyle}>
         <header
@@ -3389,7 +3396,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <h1 style={{ margin: 0, fontSize: "clamp(24px, 4vw, 34px)", lineHeight: 1.15 }}>
                 Switchpoint Greenhouse Dashboard
               </h1>
-              <p style={{ margin: "10px 0 0 0", opacity: 0.9, fontSize: 15 }}>
+              <p className="gh-subtitle" style={{ margin: "10px 0 0 0", opacity: 0.9, fontSize: 15 }}>
                 Mobile-friendly operations build for dashboard, production inventory, and staff daily tasks.
               </p>
             </div>
@@ -4767,7 +4774,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               </FormGrid>
             )}
 
-            <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
               <button
                 onClick={() => { setQhType("Trim Harvest"); setQhQty(""); setQhPods(""); setQhScrapReason(""); }}
                 style={qhType === "Trim Harvest"
@@ -5218,12 +5225,15 @@ const pageStyle: React.CSSProperties = {
   background: "#e5e7eb",
   color: "#1f2937",
   fontFamily: "Arial, sans-serif",
+  overflowX: "hidden",
 };
 
 const containerStyle: React.CSSProperties = {
   maxWidth: 1440,
   margin: "0 auto",
   padding: 16,
+  boxSizing: "border-box",
+  width: "100%",
 };
 
 const headerStyle: React.CSSProperties = {
@@ -5358,7 +5368,6 @@ const textareaStyle: React.CSSProperties = {
 
 const tableStyle: React.CSSProperties = {
   width: "100%",
-  minWidth: 680,
   borderCollapse: "separate",
   borderSpacing: 0,
   background: "white",
