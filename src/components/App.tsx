@@ -3401,11 +3401,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         {activePage === "dashboard" && (
           <div style={sectionStackStyle}>
             <ResponsiveStatGrid>
-              <StatCard label="Qty on Order" value={dashboardStats.totalQtyOnOrder} />
-              <StatCard label="New Towers Needed" value={dashboardStats.totalNewTowersNeeded} />
-              <StatCard label="Active Inventory Entries" value={dashboardStats.activeInventoryCount} />
-              <StatCard label="Ready Inventory" value={dashboardStats.readyInventory} />
-              <StatCard label="Overdue Orders" value={dashboardStats.overdueOrders} />
               <StatCard label="Harvested This Week (lbs)" value={dashboardStats.harvestedThisWeek} />
               <StatCard label="Scrapped This Week (lbs)" value={dashboardStats.scrappedThisWeek} />
               <StatCard label="Harvested Prev Week (lbs)" value={dashboardStats.harvestedPrevWeek} />
