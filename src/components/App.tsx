@@ -4875,9 +4875,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <tr>
                 <th style={thStyle}>Tower</th>
                 <th style={thStyle}>Crop</th>
-                <th style={thStyle}>Stage</th>
                 <th style={thStyle}>Active Pods</th>
-                <th style={thStyle}>Expected Lbs</th>
                 <th style={thStyle}>Remaining Lbs</th>
                 <th style={thStyle}>Ready Date</th>
                 <th style={thStyle}>Action</th>
@@ -4886,7 +4884,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             <tbody>
               {readyToHarvestInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={tdStyle}>
+                  <td colSpan={6} style={tdStyle}>
                     No inventory entries are ready to harvest today.
                   </td>
                 </tr>
@@ -4898,9 +4896,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                       <tr>
                         <td style={tdStyle}>{getInventoryTower(item) || "-"}</td>
                         <td style={tdStyle}>{getInventoryCrop(item)}</td>
-                        <td style={tdStyle}>{getInventoryStage(item)}</td>
                         <td style={tdStyle}>{getInventoryActivePods(item)}</td>
-                        <td style={tdStyle}>{getInventoryExpectedLbs(item)}</td>
                         <td style={tdStyle}>{getInventoryRemainingExpectedLbs(item)}</td>
                         <td style={tdStyle}>{formatDateDisplay(getInventoryEffectiveReadyDate(item))}</td>
                         <td style={tdStyle}>
@@ -4911,7 +4907,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                       </tr>
                       {isActiveRow ? (
                         <tr>
-                          <td colSpan={8} style={{ ...tdStyle, background: "#f8fafc" }}>
+                          <td colSpan={6} style={{ ...tdStyle, background: "#f8fafc" }}>
                             <FormGrid columns={3}>
                               <Field label="Harvest Type">
                                 <select value={harvestActionType} onChange={(e) => setHarvestActionType(e.target.value as "Full Harvest" | "Trim Harvest")} style={compactInputStyle}>
@@ -5020,7 +5016,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       </TableScroll>
     </Panel>
 
-    <Panel title="Overdue / Due Soon">
+    <Panel title="Overdue Orders">
       <TableScroll>
         <table style={tableStyle}>
           <thead>
@@ -5029,15 +5025,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <th style={thStyle}>Crop</th>
               <th style={thStyle}>Due Date</th>
               <th style={thStyle}>Status</th>
-              <th style={thStyle}>New Towers</th>
             </tr>
           </thead>
           <tbody>
             {overdueOrders.length === 0 ? (
               <tr>
-                <td colSpan={5} style={tdStyle}>
-                  No overdue orders.
-                </td>
+                <td colSpan={4} style={tdStyle}>No overdue orders.</td>
               </tr>
             ) : (
               overdueOrders.map((order) => (
@@ -5046,100 +5039,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   <td style={tdStyle}>{getOrderCrop(order)}</td>
                   <td style={tdStyle}>{formatDateDisplay(getOrderRequestedDeliveryDate(order))}</td>
                   <td style={tdStyle}>{getOrderStatus(order)}</td>
-                  <td style={tdStyle}>{getOrderNewTowersToPlant(order)}</td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </TableScroll>
-    </Panel>
-
-    <Panel title="Transplant Today">
-      <FormGrid columns={3}>
-        <Field label="Seeded Item">
-          <select
-            value={transplantRowNumber}
-            onChange={(e) => setTransplantRowNumber(e.target.value)}
-            style={compactInputStyle}
-          >
-            <option value="">Select seeded item</option>
-            {transplantTodayTasks.map((item) => (
-              <option key={item.rowNumber} value={item.rowNumber}>
-                {getInventoryCrop(item)} - {formatDateDisplay(getInventorySeededDate(item))}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Tower">
-          <input
-            value={transplantTower}
-            onChange={(e) => setTransplantTower(e.target.value)}
-            style={compactInputStyle}
-            placeholder="R1"
-          />
-        </Field>
-
-        <Field label="Tower Type">
-          <select
-            value={transplantTowerType}
-            onChange={(e) => setTransplantTowerType(e.target.value)}
-            style={compactInputStyle}
-          >
-            <option value="Low Density">Low Density (44)</option>
-            <option value="High Density">High Density (160)</option>
-          </select>
-        </Field>
-
-        <Field label="Max Pods">
-          <input
-            value={transplantMaxPods}
-            onChange={(e) => setTransplantMaxPods(e.target.value)}
-            style={compactInputStyle}
-          />
-        </Field>
-
-        <Field label="Active Pods">
-          <input
-            value={transplantActivePods}
-            onChange={(e) => setTransplantActivePods(e.target.value)}
-            style={compactInputStyle}
-          />
-        </Field>
-
-        <Field label="Transplant Date">
-          <input
-            type="date"
-            value={transplantDate}
-            onChange={(e) => setTransplantDate(e.target.value)}
-            style={compactInputStyle}
-          />
-        </Field>
-
-        <Field label="Estimated Ready Date">
-          <input
-            type="date"
-            value={transplantReadyDate}
-            onChange={(e) => setTransplantReadyDate(e.target.value)}
-            style={compactInputStyle}
-          />
-        </Field>
-      </FormGrid>
-
-      <Field label="Notes">
-        <input
-          value={transplantNotes}
-          onChange={(e) => setTransplantNotes(e.target.value)}
-          style={compactInputStyle}
-        />
-      </Field>
-
-      <ActionRow message={dailyMessage}>
-        <button onClick={handleMarkTransplanted} style={primaryButtonStyle}>
-          Mark Transplanted
-        </button>
-      </ActionRow>
     </Panel>
 
     <Panel title="Recent Activity">
@@ -5152,35 +5057,39 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <th style={thStyle}>Tower</th>
               <th style={thStyle}>Crop</th>
               <th style={thStyle}>Lbs</th>
-              <th style={thStyle}>Pods Changed</th>
-              <th style={thStyle}>Date</th>
+              <th style={thStyle}>Pods</th>
+              <th style={thStyle}>Note</th>
             </tr>
           </thead>
           <tbody>
             {filteredRecentActivity.length === 0 ? (
               <tr>
-                <td colSpan={7} style={tdStyle}>
-                  No recent activity found.
-                </td>
+                <td colSpan={7} style={tdStyle}>No recent activity found.</td>
               </tr>
             ) : (
-              filteredRecentActivity.map((row) => (
-                <tr key={row.rowNumber}>
-                  <td style={tdStyle}>{formatDateTimeDisplay(getStaffTimestamp(row))}</td>
-                  <td style={tdStyle}>{getStaffMode(row)}</td>
-                  <td style={tdStyle}>{getStaffTower(row)}</td>
-                  <td style={tdStyle}>{getStaffCrop(row)}</td>
-                  <td style={tdStyle}>{getStaffLbs(row)}</td>
-                  <td style={tdStyle}>{getStaffPodsChanged(row)}</td>
-                  <td style={tdStyle}>{formatDateDisplay(getStaffDate(row))}</td>
-                </tr>
-              ))
+              filteredRecentActivity.map((row) => {
+                const lbs = toNumber(getStaffLbs(row));
+                const pods = toNumber(getStaffPodsChanged(row));
+                const note = getStaffNote(row) || "";
+                const shortNote = note.length > 60 ? note.slice(0, 60) + "…" : note;
+                return (
+                  <tr key={row.rowNumber}>
+                    <td style={tdStyle}>{formatDateTimeDisplay(getStaffTimestamp(row))}</td>
+                    <td style={tdStyle}>{getStaffMode(row)}</td>
+                    <td style={tdStyle}>{getStaffTower(row)}</td>
+                    <td style={tdStyle}>{getStaffCrop(row)}</td>
+                    <td style={tdStyle}>{lbs > 0 ? Math.round(lbs * 100) / 100 : ""}</td>
+                    <td style={tdStyle}>{pods > 0 ? pods : ""}</td>
+                    <td style={{ ...tdStyle, maxWidth: 200 }} title={note}>{shortNote}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
       <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
-        Showing 5 visible rows. Scroll to see the rest.
+        Scroll to see more entries.
       </div>
     </Panel>
   </div>
