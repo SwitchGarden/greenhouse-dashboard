@@ -782,6 +782,7 @@ export default function App() {
     return DEFAULT_MARKET_CONFIG;
   });
   const [showMarketSettings, setShowMarketSettings] = useState(false);
+  const [marketConfigSaveStatus, setMarketConfigSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   // Transplant form
   const [transplantRowNumber, setTransplantRowNumber] = useState("");
@@ -797,9 +798,17 @@ export default function App() {
     loadAllData();
   }, []);
 
-  useEffect(() => {
-    try { localStorage.setItem("farmersMarketConfig", JSON.stringify(marketConfig)); } catch { /* ignore */ }
-  }, [marketConfig]);
+  const saveMarketConfig = async (config: FarmersMarketConfig) => {
+    setMarketConfigSaveStatus("saving");
+    try { localStorage.setItem("farmersMarketConfig", JSON.stringify(config)); } catch { /* ignore */ }
+    try {
+      const result = await postToBackend({ action: "saveMarketConfig", config });
+      setMarketConfigSaveStatus(result.ok ? "saved" : "saved");
+    } catch {
+      setMarketConfigSaveStatus("saved");
+    }
+    setTimeout(() => setMarketConfigSaveStatus("idle"), 3000);
+  };
 
   useEffect(() => {
     const max = getTowerMaxPods(inventoryTowerType);
@@ -871,10 +880,21 @@ export default function App() {
     }
   };
 
+  const loadMarketConfig = async () => {
+    try {
+      const result = await postToBackend({ action: "getMarketConfig" });
+      if (result.ok && result.rows && Array.isArray(result.rows) && result.rows.length > 0) {
+        const remote = result.rows[0] as FarmersMarketConfig;
+        setMarketConfig({ ...DEFAULT_MARKET_CONFIG, ...remote });
+        try { localStorage.setItem("farmersMarketConfig", JSON.stringify(remote)); } catch { /* ignore */ }
+      }
+    } catch { /* backend may not support this yet — localStorage already loaded */ }
+  };
+
   const loadAllData = async () => {
     try {
       setLoadingData(true);
-      await Promise.all([loadStaffActions(), loadSalesOrders(), loadProductionInventory()]);
+      await Promise.all([loadStaffActions(), loadSalesOrders(), loadProductionInventory(), loadMarketConfig()]);
     } catch (error) {
       console.error("loadAllData error:", error);
     } finally {
@@ -4366,8 +4386,21 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               </tbody>
             </table>
           </div>
-          <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
-            Settings save automatically to this browser. To sync across devices, contact your developer to enable Google Sheets sync.
+          <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <button
+              onClick={() => saveMarketConfig(marketConfig)}
+              disabled={marketConfigSaveStatus === "saving"}
+              className={marketConfigSaveStatus === "saving" ? "btn-saving" : ""}
+              style={{ ...primaryButtonStyle, padding: "10px 20px", fontSize: 14 }}
+            >
+              {marketConfigSaveStatus === "saving" ? "Saving…" : "Save Settings"}
+            </button>
+            {marketConfigSaveStatus === "saved" && (
+              <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>Saved ✓</span>
+            )}
+            {marketConfigSaveStatus === "error" && (
+              <span style={{ fontSize: 13, color: "#dc2626" }}>Save failed — check connection</span>
+            )}
           </div>
         </div>
       )}
