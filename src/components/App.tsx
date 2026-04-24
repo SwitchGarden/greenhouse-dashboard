@@ -741,11 +741,12 @@ export default function App() {
 
   // Quick Harvest panel
   const [qhRowNumber, setQhRowNumber] = useState("");
-  const [qhType, setQhType] = useState<"Full Harvest" | "Trim Harvest" | null>(null);
+  const [qhType, setQhType] = useState<"Full Harvest" | "Trim Harvest" | "Scrap" | null>(null);
   const [qhQty, setQhQty] = useState("");
   const [qhUnit, setQhUnit] = useState<OrderUnitType>("Lbs");
   const [qhPods, setQhPods] = useState("");
   const [qhNote, setQhNote] = useState("");
+  const [qhScrapReason, setQhScrapReason] = useState("");
   const [qhOrderRowNumber, setQhOrderRowNumber] = useState("");
   const [qhMessage, setQhMessage] = useState("");
   const [qhSaving, setQhSaving] = useState(false);
@@ -3119,84 +3120,126 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     if (!qhRowNumber || !qhType) { setQhMessage("Please select a tower and harvest type."); return; }
     const selected = activeInventory.find((r) => String(r.rowNumber) === qhRowNumber);
     if (!selected) { setQhMessage("Tower not found."); return; }
-    const outputQty = toNumber(qhQty);
-    const podsWorked = toNumber(qhPods);
-    const harvestLbs = quantityToLbs(qhUnit, outputQty);
-    if (!outputQty) { setQhMessage("Please enter harvested quantity."); return; }
-    if (!podsWorked) { setQhMessage(qhType === "Trim Harvest" ? "Please enter pods trimmed." : "Please enter pods harvested."); return; }
     const currentActivePods = toNumber(getInventoryActivePods(selected));
     const currentRemainingLbs = toNumber(getInventoryRemainingExpectedLbs(selected));
     const currentExpectedLbs = toNumber(getInventoryExpectedLbs(selected));
-    if (podsWorked > currentActivePods) { setQhMessage("Cannot harvest more pods than are active."); return; }
-    if (harvestLbs > currentRemainingLbs + 0.001) { setQhMessage("Harvested weight exceeds remaining harvestable lbs."); return; }
+    const crop = getInventoryCrop(selected);
+
     setQhSaving(true);
     setQhMessage("");
     try {
-      const isFullHarvest = qhType === "Full Harvest";
-      const newActivePods = isFullHarvest ? Math.max(0, currentActivePods - podsWorked) : currentActivePods;
-      const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - harvestLbs) * 100) / 100);
-      const isFinished = newActivePods <= 0 || newRemainingLbs <= 0.01;
-      const newStatus = isFinished ? "Harvested" : getInventoryStatus(selected) || "Active";
-      const newStage = isFinished ? "Harvested" : isFullHarvest ? "Ready" : "Trimmed";
-      const actionNote = [qhType, `${outputQty} ${getUnitLabel(qhUnit)}`, isFullHarvest ? `${podsWorked} pods harvested` : `${podsWorked} pods trimmed`, qhNote].filter(Boolean).join(" | ");
+      if (qhType === "Scrap") {
+        const actionNote = ["Scrapped", qhScrapReason].filter(Boolean).join(" | ");
+        const actionResult = await postToBackend({
+          action: "saveStaffAction",
+          mode: "Scrapped",
+          tower: getInventoryTower(selected),
+          crop,
+          lbs: currentRemainingLbs,
+          podsChanged: currentActivePods,
+          status: "Completed",
+          stage: "Scrapped",
+          date: formatDateInput(new Date()),
+          scrapType: qhScrapReason,
+          note: actionNote,
+        });
+        if (!actionResult.ok) { setQhMessage(actionResult.message || "Failed to log scrap."); setQhSaving(false); return; }
 
-      const actionResult = await postToBackend({
-        action: "saveStaffAction",
-        mode: "Harvest",
-        tower: getInventoryTower(selected),
-        crop: getInventoryCrop(selected),
-        lbs: harvestLbs,
-        podsChanged: isFullHarvest ? podsWorked : "",
-        status: isFinished ? "Completed" : "Partial",
-        stage: newStage,
-        date: formatDateInput(new Date()),
-        scrapType: "",
-        note: actionNote,
-      });
-      if (!actionResult.ok) { setQhMessage(actionResult.message || "Failed to log harvest."); setQhSaving(false); return; }
+        const updateResult = await postToBackend({
+          action: "updateProductionInventoryRow",
+          rowNumber: selected.rowNumber,
+          tower: getInventoryTower(selected),
+          towerType: getInventoryTowerType(selected),
+          maxPods: toNumber(getInventoryMaxPods(selected)),
+          activePods: 0,
+          crop,
+          stage: "Scrapped",
+          seededDate: getInventorySeededDate(selected),
+          transplantDate: getInventoryTransplantDate(selected),
+          estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
+          expectedLbs: currentExpectedLbs,
+          remainingExpectedLbs: 0,
+          status: "Scrapped",
+          notes: [getInventoryNotes(selected), actionNote].filter(Boolean).join(" | "),
+        });
+        if (!updateResult.ok) { setQhMessage(updateResult.message || "Scrap logged but inventory update failed."); setQhSaving(false); return; }
 
-      const updateResult = await postToBackend({
-        action: "updateProductionInventoryRow",
-        rowNumber: selected.rowNumber,
-        tower: getInventoryTower(selected),
-        towerType: getInventoryTowerType(selected),
-        maxPods: toNumber(getInventoryMaxPods(selected)),
-        activePods: newActivePods,
-        crop: getInventoryCrop(selected),
-        stage: newStage,
-        seededDate: getInventorySeededDate(selected),
-        transplantDate: getInventoryTransplantDate(selected),
-        estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
-        expectedLbs: currentExpectedLbs,
-        remainingExpectedLbs: newRemainingLbs,
-        status: newStatus,
-        notes: [getInventoryNotes(selected), actionNote].filter(Boolean).join(" | "),
-      });
-      if (!updateResult.ok) { setQhMessage(updateResult.message || "Harvest logged but inventory update failed."); setQhSaving(false); return; }
+        setQhMessage(`${crop} marked as scrapped and removed from active inventory.`);
+      } else {
+        const outputQty = toNumber(qhQty);
+        const podsWorked = toNumber(qhPods);
+        const harvestLbs = quantityToLbs(qhUnit, outputQty);
+        if (!outputQty) { setQhMessage("Please enter harvested quantity."); setQhSaving(false); return; }
+        if (!podsWorked) { setQhMessage(qhType === "Trim Harvest" ? "Please enter pods trimmed." : "Please enter pods harvested."); setQhSaving(false); return; }
+        if (podsWorked > currentActivePods) { setQhMessage("Cannot harvest more pods than are active."); setQhSaving(false); return; }
+        if (harvestLbs > currentRemainingLbs + 0.001) { setQhMessage("Harvested weight exceeds remaining harvestable lbs."); setQhSaving(false); return; }
 
-      // Update linked order status if one was selected
-      if (qhOrderRowNumber) {
-        const linkedOrder = salesOrders.find((o) => String(o.rowNumber) === qhOrderRowNumber);
-        if (linkedOrder) {
-          const orderQtyLbs = quantityToLbs(getOrderUnitType(linkedOrder), toNumber(getOrderQuantityNeeded(linkedOrder)));
-          const orderNewStatus = harvestLbs >= orderQtyLbs - 0.001 ? "Harvested" : "In Progress";
-          await postToBackend({ action: "updateOrderStatus", rowNumber: linkedOrder.rowNumber, status: orderNewStatus });
-          await loadSalesOrders();
+        const isFullHarvest = qhType === "Full Harvest";
+        const newActivePods = isFullHarvest ? Math.max(0, currentActivePods - podsWorked) : currentActivePods;
+        const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - harvestLbs) * 100) / 100);
+        const isFinished = newActivePods <= 0 || newRemainingLbs <= 0.01;
+        const newStatus = isFinished ? "Harvested" : getInventoryStatus(selected) || "Active";
+        const newStage = isFinished ? "Harvested" : isFullHarvest ? "Ready" : "Trimmed";
+        const actionNote = [qhType, `${outputQty} ${getUnitLabel(qhUnit)}`, isFullHarvest ? `${podsWorked} pods harvested` : `${podsWorked} pods trimmed`, qhNote].filter(Boolean).join(" | ");
+
+        const actionResult = await postToBackend({
+          action: "saveStaffAction",
+          mode: "Harvest",
+          tower: getInventoryTower(selected),
+          crop,
+          lbs: harvestLbs,
+          podsChanged: isFullHarvest ? podsWorked : "",
+          status: isFinished ? "Completed" : "Partial",
+          stage: newStage,
+          date: formatDateInput(new Date()),
+          scrapType: "",
+          note: actionNote,
+        });
+        if (!actionResult.ok) { setQhMessage(actionResult.message || "Failed to log harvest."); setQhSaving(false); return; }
+
+        const updateResult = await postToBackend({
+          action: "updateProductionInventoryRow",
+          rowNumber: selected.rowNumber,
+          tower: getInventoryTower(selected),
+          towerType: getInventoryTowerType(selected),
+          maxPods: toNumber(getInventoryMaxPods(selected)),
+          activePods: newActivePods,
+          crop,
+          stage: newStage,
+          seededDate: getInventorySeededDate(selected),
+          transplantDate: getInventoryTransplantDate(selected),
+          estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
+          expectedLbs: currentExpectedLbs,
+          remainingExpectedLbs: newRemainingLbs,
+          status: newStatus,
+          notes: [getInventoryNotes(selected), actionNote].filter(Boolean).join(" | "),
+        });
+        if (!updateResult.ok) { setQhMessage(updateResult.message || "Harvest logged but inventory update failed."); setQhSaving(false); return; }
+
+        if (qhOrderRowNumber) {
+          const linkedOrder = salesOrders.find((o) => String(o.rowNumber) === qhOrderRowNumber);
+          if (linkedOrder) {
+            const orderQtyLbs = quantityToLbs(getOrderUnitType(linkedOrder), toNumber(getOrderQuantityNeeded(linkedOrder)));
+            const orderNewStatus = harvestLbs >= orderQtyLbs - 0.001 ? "Harvested" : "In Progress";
+            await postToBackend({ action: "updateOrderStatus", rowNumber: linkedOrder.rowNumber, status: orderNewStatus });
+            await loadSalesOrders();
+          }
         }
+
+        setQhMessage(isFinished ? `Full harvest complete — ${crop} removed from active inventory.` : `${qhType} saved for ${crop}.`);
       }
 
-      const crop = getInventoryCrop(selected);
-      setQhMessage(isFinished ? `Full harvest complete — ${crop} removed from active inventory.` : `${qhType} saved for ${crop}.`);
       setQhRowNumber("");
       setQhType(null);
       setQhQty("");
       setQhPods("");
       setQhNote("");
+      setQhScrapReason("");
       setQhOrderRowNumber("");
       await Promise.all([loadProductionInventory(), loadStaffActions()]);
     } catch (err) {
       console.error("handleQuickHarvest error:", err);
-      setQhMessage("Error saving harvest.");
+      setQhMessage("Error saving.");
     } finally {
       setQhSaving(false);
     }
@@ -4669,7 +4712,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
             <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
               <button
-                onClick={() => { setQhType("Trim Harvest"); setQhQty(""); setQhPods(""); }}
+                onClick={() => { setQhType("Trim Harvest"); setQhQty(""); setQhPods(""); setQhScrapReason(""); }}
                 style={qhType === "Trim Harvest"
                   ? { ...primaryButtonStyle, background: "#0891b2" }
                   : { ...secondaryButtonStyle, fontWeight: 600 }}
@@ -4677,25 +4720,57 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 Trim Harvest
               </button>
               <button
-                onClick={() => { setQhType("Full Harvest"); setQhQty(""); setQhPods(String(activePods)); }}
+                onClick={() => { setQhType("Full Harvest"); setQhQty(""); setQhPods(String(activePods)); setQhScrapReason(""); }}
                 style={qhType === "Full Harvest"
                   ? { ...primaryButtonStyle, background: "#16a34a" }
                   : { ...secondaryButtonStyle, fontWeight: 600 }}
               >
                 Full Harvest
               </button>
+              <button
+                onClick={() => { setQhType("Scrap"); setQhQty(""); setQhPods(""); setQhNote(""); }}
+                style={qhType === "Scrap"
+                  ? { ...primaryButtonStyle, background: "#dc2626" }
+                  : { ...secondaryButtonStyle, fontWeight: 600, color: "#dc2626", borderColor: "#dc2626" }}
+              >
+                Scrap Tower
+              </button>
             </div>
-            {qhType && (
-              <div style={{ fontSize: 13, color: "#64748b", marginBottom: 14, padding: "8px 12px", background: "#f1f5f9", borderRadius: 8 }}>
-                {qhType === "Trim Harvest"
-                  ? "Trim Harvest — cut leaves from the plant and it stays in the tower. Enter the weight of greens you cut, and how many pods you trimmed from."
-                  : "Full Harvest — the entire plant is pulled. Enter the total weight harvested and confirm the pod count (pre-filled for you)."}
-              </div>
+
+            {qhType === "Scrap" && (
+              <>
+                <div style={{ fontSize: 13, color: "#7f1d1d", marginBottom: 14, padding: "8px 12px", background: "#fef2f2", borderRadius: 8, border: "1px solid #fecaca" }}>
+                  Scrap Tower — the entire tower will be marked as scrapped. All {activePods} pods ({remainingLbs} lbs) will be logged to Scrapped This Week.
+                </div>
+                <FormGrid columns={2}>
+                  <Field label="Reason for Scrapping">
+                    <input
+                      value={qhScrapReason}
+                      onChange={(e) => setQhScrapReason(e.target.value)}
+                      style={inputStyle}
+                      placeholder="Disease, damage, poor growth, etc."
+                      autoFocus
+                    />
+                  </Field>
+                </FormGrid>
+                <ActionRow message={qhMessage}>
+                  <button onClick={handleQuickHarvest} disabled={qhSaving} style={{ ...primaryButtonStyle, background: "#dc2626" }}>
+                    {qhSaving ? "Saving…" : "Confirm Scrap"}
+                  </button>
+                  <button onClick={() => { setQhRowNumber(""); setQhType(null); setQhScrapReason(""); setQhOrderRowNumber(""); setQhMessage(""); }} style={secondaryButtonStyle}>
+                    Clear
+                  </button>
+                </ActionRow>
+              </>
             )}
 
-            {/* Step 3: harvest details */}
-            {qhType && (
+            {(qhType === "Trim Harvest" || qhType === "Full Harvest") && (
               <>
+                <div style={{ fontSize: 13, color: "#64748b", marginBottom: 14, padding: "8px 12px", background: "#f1f5f9", borderRadius: 8 }}>
+                  {qhType === "Trim Harvest"
+                    ? "Trim Harvest — cut leaves from the plant and it stays in the tower. Enter the weight of greens you cut, and how many pods you trimmed from."
+                    : "Full Harvest — the entire plant is pulled. Enter the total weight harvested and confirm the pod count (pre-filled for you)."}
+                </div>
                 <FormGrid columns={3}>
                   <Field label={qhType === "Trim Harvest" ? "Weight of Greens Cut" : "Total Weight Harvested"}>
                     <input
