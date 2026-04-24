@@ -746,6 +746,7 @@ export default function App() {
   const [qhUnit, setQhUnit] = useState<OrderUnitType>("Lbs");
   const [qhPods, setQhPods] = useState("");
   const [qhNote, setQhNote] = useState("");
+  const [qhOrderRowNumber, setQhOrderRowNumber] = useState("");
   const [qhMessage, setQhMessage] = useState("");
   const [qhSaving, setQhSaving] = useState(false);
   const [staffLookupCrop, setStaffLookupCrop] = useState("");
@@ -3154,6 +3155,17 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       });
       if (!updateResult.ok) { setQhMessage(updateResult.message || "Harvest logged but inventory update failed."); setQhSaving(false); return; }
 
+      // Update linked order status if one was selected
+      if (qhOrderRowNumber) {
+        const linkedOrder = salesOrders.find((o) => String(o.rowNumber) === qhOrderRowNumber);
+        if (linkedOrder) {
+          const orderQtyLbs = quantityToLbs(getOrderUnitType(linkedOrder), toNumber(getOrderQuantityNeeded(linkedOrder)));
+          const orderNewStatus = harvestLbs >= orderQtyLbs - 0.001 ? "Harvested" : "In Progress";
+          await postToBackend({ action: "updateOrderStatus", rowNumber: linkedOrder.rowNumber, status: orderNewStatus });
+          await loadSalesOrders();
+        }
+      }
+
       const crop = getInventoryCrop(selected);
       setQhMessage(isFinished ? `Full harvest complete — ${crop} removed from active inventory.` : `${qhType} saved for ${crop}.`);
       setQhRowNumber("");
@@ -3161,6 +3173,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       setQhQty("");
       setQhPods("");
       setQhNote("");
+      setQhOrderRowNumber("");
       await Promise.all([loadProductionInventory(), loadStaffActions()]);
     } catch (err) {
       console.error("handleQuickHarvest error:", err);
@@ -4575,7 +4588,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         <Field label="Select Tower">
           <select
             value={qhRowNumber}
-            onChange={(e) => { setQhRowNumber(e.target.value); setQhType(null); setQhQty(""); setQhPods(""); setQhMessage(""); }}
+            onChange={(e) => { setQhRowNumber(e.target.value); setQhType(null); setQhQty(""); setQhPods(""); setQhOrderRowNumber(""); setQhMessage(""); }}
             style={inputStyle}
           >
             <option value="">— choose a tower —</option>
@@ -4599,6 +4612,11 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         const activePods = toNumber(getInventoryActivePods(sel));
         const remainingLbs = toNumber(getInventoryRemainingExpectedLbs(sel));
         const expectedLbs = toNumber(getInventoryExpectedLbs(sel));
+        const selCropKey = (getInventoryCrop(sel) || "").trim().toLowerCase();
+        const matchingOrders = salesOrders.filter((o) => {
+          const st = normalizeStatus(getOrderStatus(o));
+          return (getOrderCrop(o) || "").trim().toLowerCase() === selCropKey && st !== "harvested" && st !== "cancelled" && st !== "packed";
+        });
         return (
           <>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", margin: "12px 0", padding: "10px 14px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 14 }}>
@@ -4608,6 +4626,23 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <span><strong>Expected Lbs:</strong> {expectedLbs}</span>
               <span><strong>Remaining Lbs:</strong> {remainingLbs}</span>
             </div>
+
+            {matchingOrders.length > 0 && (
+              <FormGrid columns={2}>
+                <Field label="Fulfilling Order (optional)">
+                  <select value={qhOrderRowNumber} onChange={(e) => setQhOrderRowNumber(e.target.value)} style={inputStyle}>
+                    <option value="">— none —</option>
+                    {matchingOrders.map((o) => (
+                      <option key={o.rowNumber} value={String(o.rowNumber)}>
+                        {getOrderCustomer(o)} — {getOrderQuantityNeeded(o)} {getOrderUnitType(o)}
+                        {getOrderRequestedDeliveryDate(o) ? ` (due ${formatDateDisplay(getOrderRequestedDeliveryDate(o))})` : ""}
+                        {getOrderStatus(o) ? ` [${getOrderStatus(o)}]` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </FormGrid>
+            )}
 
             <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
               <button
@@ -4681,7 +4716,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   <button onClick={handleQuickHarvest} disabled={qhSaving} style={primaryButtonStyle}>
                     {qhSaving ? "Saving…" : `Save ${qhType}`}
                   </button>
-                  <button onClick={() => { setQhRowNumber(""); setQhType(null); setQhQty(""); setQhPods(""); setQhNote(""); setQhMessage(""); }} style={secondaryButtonStyle}>
+                  <button onClick={() => { setQhRowNumber(""); setQhType(null); setQhQty(""); setQhPods(""); setQhNote(""); setQhOrderRowNumber(""); setQhMessage(""); }} style={secondaryButtonStyle}>
                     Clear
                   </button>
                 </ActionRow>
