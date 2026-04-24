@@ -3346,6 +3346,22 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
   return (
     <div style={pageStyle}>
+      <style>{`
+        button:disabled { opacity: 0.55; cursor: not-allowed; }
+        @keyframes btn-spin { to { transform: rotate(360deg); } }
+        .btn-saving::after {
+          content: '';
+          display: inline-block;
+          width: 11px;
+          height: 11px;
+          border: 2px solid rgba(255,255,255,0.35);
+          border-top-color: currentColor;
+          border-radius: 50%;
+          animation: btn-spin 0.65s linear infinite;
+          margin-left: 7px;
+          vertical-align: middle;
+        }
+      `}</style>
       <div style={containerStyle}>
         <header
           style={{
@@ -3385,11 +3401,11 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             <button onClick={() => setActivePage("dashboard")} style={activePage === "dashboard" ? navButtonActiveStyle : navButtonStyle}>
               Dashboard
             </button>
-            <button onClick={() => setActivePage("inventory")} style={activePage === "inventory" ? navButtonActiveStyle : navButtonStyle}>
-              Production Inventory
-            </button>
             <button onClick={() => setActivePage("staffDaily")} style={activePage === "staffDaily" ? navButtonActiveStyle : navButtonStyle}>
               Staff Daily
+            </button>
+            <button onClick={() => setActivePage("inventory")} style={activePage === "inventory" ? navButtonActiveStyle : navButtonStyle}>
+              Production Inventory
             </button>
           </div>
 
