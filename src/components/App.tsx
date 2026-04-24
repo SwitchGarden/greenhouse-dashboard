@@ -1682,6 +1682,23 @@ const overdueOrders = useMemo(() => {
       .filter((row) => normalizeStatus(getInventoryStage(row)) !== "seeded")
       .reduce((sum, row) => sum + toNumber(getInventoryActivePods(row)), 0);
 
+    const fulfilledStatuses = ["harvested", "packed", "completed"];
+    const kitchenLbs = salesOrders
+      .filter((o) => {
+        const customer = (getOrderCustomer(o) || "").toLowerCase();
+        const status = normalizeStatus(getOrderStatus(o));
+        return customer.includes("kitchen") && fulfilledStatuses.includes(status);
+      })
+      .reduce((sum, o) => sum + quantityToLbs(getOrderUnitType(o), toNumber(getOrderQuantityNeeded(o))), 0);
+
+    const pantryLbs = salesOrders
+      .filter((o) => {
+        const customer = (getOrderCustomer(o) || "").toLowerCase();
+        const status = normalizeStatus(getOrderStatus(o));
+        return customer.includes("pantry") && fulfilledStatuses.includes(status);
+      })
+      .reduce((sum, o) => sum + quantityToLbs(getOrderUnitType(o), toNumber(getOrderQuantityNeeded(o))), 0);
+
     return {
       totalQtyOnOrder,
       totalNewTowersNeeded,
@@ -1693,6 +1710,8 @@ const overdueOrders = useMemo(() => {
       harvestedPrevWeek: weeklyMetrics.harvestedPrevWeek,
       scrappedPrevWeek: weeklyMetrics.scrappedPrevWeek,
       podsInProduction,
+      kitchenLbs,
+      pantryLbs,
     };
   }, [salesOrders, activeInventory, overdueOrders, weeklyMetrics]);
 
@@ -3317,6 +3336,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <StatCard label="Harvested Prev Week (lbs)" value={dashboardStats.harvestedPrevWeek} />
               <StatCard label="Scrapped Prev Week (lbs)" value={dashboardStats.scrappedPrevWeek} />
               <StatCard label="Pods in Production" value={dashboardStats.podsInProduction} />
+              <StatCard label="Given to Kitchen (lbs)" value={dashboardStats.kitchenLbs} />
+              <StatCard label="Given to Pantry (lbs)" value={dashboardStats.pantryLbs} />
             </ResponsiveStatGrid>
 
             {/* Row 1: Executive Alerts | Sales Planner */}
@@ -4158,6 +4179,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         <MiniMetric label="Harvested This Week (lbs)" value={weeklyMetrics.harvestedThisWeek} />
         <MiniMetric label="Scrapped This Week (lbs)" value={weeklyMetrics.scrappedThisWeek} />
         <MiniMetric label="Pods in Production" value={dashboardStats.podsInProduction} />
+        <MiniMetric label="Given to Kitchen (lbs)" value={dashboardStats.kitchenLbs} />
+        <MiniMetric label="Given to Pantry (lbs)" value={dashboardStats.pantryLbs} />
       </MetricGrid>
       <div style={{ marginTop: 12, fontSize: 14, color: "#334155" }}>{dailyMessage}</div>
     </Panel>
@@ -5151,19 +5174,21 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
+  const display = typeof value === "number" ? Math.round(value) : value;
   return (
     <div style={statCardStyle}>
       <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>{label}</div>
-      <div style={{ fontSize: "clamp(24px, 4vw, 30px)", fontWeight: 700 }}>{value}</div>
+      <div style={{ fontSize: "clamp(24px, 4vw, 30px)", fontWeight: 700 }}>{display}</div>
     </div>
   );
 }
 
 function MiniMetric({ label, value }: { label: string; value: string | number }) {
+  const display = typeof value === "number" ? Math.round(value) : value;
   return (
     <div style={miniMetricStyle}>
       <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, wordBreak: "break-word" }}>{value}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, wordBreak: "break-word" }}>{display}</div>
     </div>
   );
 }
