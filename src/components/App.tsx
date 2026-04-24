@@ -1077,7 +1077,7 @@ export default function App() {
     return salesOrders
       .filter((row) => {
         const status = normalizeStatus(getOrderStatus(row));
-        return !["completed", "cancelled"].includes(status);
+        return !["completed", "cancelled", "harvested"].includes(status);
       })
       .filter((row) => (savedOrderStatusFilter === "All" ? true : getOrderStatus(row) === savedOrderStatusFilter))
       .filter((row) => (savedOrderCropFilter === "All" ? true : getOrderCrop(row) === savedOrderCropFilter))
