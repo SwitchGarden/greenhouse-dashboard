@@ -4609,7 +4609,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <span><strong>Remaining Lbs:</strong> {remainingLbs}</span>
             </div>
 
-            <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
               <button
                 onClick={() => { setQhType("Trim Harvest"); setQhQty(""); setQhPods(""); }}
                 style={qhType === "Trim Harvest"
@@ -4627,12 +4627,19 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 Full Harvest
               </button>
             </div>
+            {qhType && (
+              <div style={{ fontSize: 13, color: "#64748b", marginBottom: 14, padding: "8px 12px", background: "#f1f5f9", borderRadius: 8 }}>
+                {qhType === "Trim Harvest"
+                  ? "Trim Harvest — cut leaves from the plant and it stays in the tower. Enter the weight of greens you cut, and how many pods you trimmed from."
+                  : "Full Harvest — the entire plant is pulled. Enter the total weight harvested and confirm the pod count (pre-filled for you)."}
+              </div>
+            )}
 
             {/* Step 3: harvest details */}
             {qhType && (
               <>
                 <FormGrid columns={3}>
-                  <Field label="Qty Harvested">
+                  <Field label={qhType === "Trim Harvest" ? "Weight of Greens Cut" : "Total Weight Harvested"}>
                     <input
                       type="number"
                       value={qhQty}
