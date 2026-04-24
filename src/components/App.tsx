@@ -1133,6 +1133,13 @@ export default function App() {
     );
 }, [activeInventory]);
 
+const emptyTowers = useMemo(() =>
+  activeInventory
+    .filter((item) => normalizeStatus(getInventoryStage(item)) === "empty" && !!getInventoryTower(item))
+    .slice()
+    .sort(sortInventoryByTowerLayout),
+  [activeInventory]);
+
 const transplantTodayTasks = useMemo(() => {
   return activeInventory
     .filter((item) => normalizeStatus(getInventoryStage(item)) === "seeded")
@@ -1680,7 +1687,7 @@ const overdueOrders = useMemo(() => {
     const totalNewTowersNeeded = activeOrders.reduce((sum, row) => sum + toNumber(getOrderNewTowersToPlant(row)), 0);
     const readyInventory = activeInventory.filter((item) => normalizeStatus(getInventoryStage(item)) === "ready").length;
     const podsInProduction = activeInventory
-      .filter((row) => normalizeStatus(getInventoryStage(row)) !== "seeded")
+      .filter((row) => { const s = normalizeStatus(getInventoryStage(row)); return s !== "seeded" && s !== "empty"; })
       .reduce((sum, row) => sum + toNumber(getInventoryActivePods(row)), 0);
 
     const fulfilledStatuses = ["harvested", "packed", "completed"];
@@ -2456,8 +2463,10 @@ const overdueOrders = useMemo(() => {
     const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - lbsRemoved) * 100) / 100);
 
     const keepRowActiveForRepeatHarvest = adjustMode === "Harvest" && getEffectiveHarvestType(selected) === "Trim Harvest" && podsToRemove === 0;
-    const newStatus = keepRowActiveForRepeatHarvest ? (getInventoryStatus(selected) || "Active") : (newActivePods === 0 ? (adjustMode === "Harvest" ? "Harvested" : "Scrapped") : getInventoryStatus(selected) || "Active");
-    const newStage = keepRowActiveForRepeatHarvest ? (getInventoryStage(selected) || "Growing") : (newActivePods === 0 ? (adjustMode === "Harvest" ? "Harvested" : "Scrapped") : getInventoryStage(selected) || "Growing");
+    const towerName = getInventoryTower(selected);
+    const towerDone = newActivePods === 0 && !!towerName;
+    const newStatus = keepRowActiveForRepeatHarvest ? (getInventoryStatus(selected) || "Active") : (towerDone ? "Active" : getInventoryStatus(selected) || "Active");
+    const newStage = keepRowActiveForRepeatHarvest ? (getInventoryStage(selected) || "Growing") : (towerDone ? "Empty" : getInventoryStage(selected) || "Growing");
     const updatedNotes = `${getInventoryNotes(selected) || ""} ${adjustMode} ${podsToRemove} pods / ${lbsRemoved} lbs on ${formatDateInput(
       new Date()
     )}. ${adjustNote}`.trim();
@@ -2485,23 +2494,23 @@ const overdueOrders = useMemo(() => {
       const updateResult = await postToBackend({
         action: "updateProductionInventoryRow",
         rowNumber: selected.rowNumber,
-        tower: getInventoryTower(selected),
+        tower: towerName,
         towerType: getInventoryTowerType(selected),
         maxPods,
         activePods: newActivePods,
-        crop: cropName,
+        crop: towerDone ? "" : cropName,
         stage: newStage,
-        seededDate: getInventorySeededDate(selected),
-        transplantDate: getInventoryTransplantDate(selected),
-        estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
-        expectedLbs: currentExpectedLbs,
-        remainingExpectedLbs: newRemainingLbs,
+        seededDate: towerDone ? "" : getInventorySeededDate(selected),
+        transplantDate: towerDone ? "" : getInventoryTransplantDate(selected),
+        estimatedReadyDate: towerDone ? "" : getInventoryEstimatedReadyDate(selected),
+        expectedLbs: towerDone ? 0 : currentExpectedLbs,
+        remainingExpectedLbs: towerDone ? 0 : newRemainingLbs,
         status: newStatus,
-        notes: updatedNotes,
+        notes: towerDone ? "" : updatedNotes,
       });
 
       if (updateResult.ok) {
-        setAdjustMessage(`${adjustMode} adjustment saved.`);
+        setAdjustMessage(towerDone ? `${adjustMode} complete — ${towerName} is now available for new plants.` : `${adjustMode} adjustment saved.`);
         setAdjustInventoryRow("");
         setAdjustMode("Harvest");
         setAdjustPods("");
@@ -2803,6 +2812,15 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         estimatedReadyDate: addDays(seededTransplantDate, 21),
       });
       if (result.ok) {
+        // Close any empty tower row for this tower so it no longer shows as available
+        const emptyRow = activeInventory.find(
+          (r) => getInventoryTower(r) === seededTransplantTower &&
+                 normalizeStatus(getInventoryStage(r)) === "empty" &&
+                 r.rowNumber !== seededTransplantRowNumber
+        );
+        if (emptyRow) {
+          await postToBackend({ action: "updateProductionInventoryStatus", rowNumber: emptyRow.rowNumber, status: "Closed" });
+        }
         setSeededTransplantRowNumber(null);
         setSeededTransplantTower("");
         setSeededTransplantTowerType("Low Density");
@@ -2917,6 +2935,16 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       if (!updateResult.ok) {
         setDailyMessage(updateResult.message || "Unable to update production inventory for transplant.");
         return;
+      }
+
+      // Close any empty tower row for this tower so it no longer shows as available
+      const emptyTowerRow = activeInventory.find(
+        (r) => getInventoryTower(r) === transplantTower &&
+               normalizeStatus(getInventoryStage(r)) === "empty" &&
+               String(r.rowNumber) !== String(transplantRowNumber)
+      );
+      if (emptyTowerRow) {
+        await postToBackend({ action: "updateProductionInventoryStatus", rowNumber: emptyTowerRow.rowNumber, status: "Closed" });
       }
 
       const matchingOrders = salesOrders
@@ -3049,8 +3077,9 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       const newActivePods = isFullHarvest ? Math.max(0, currentActivePods - podsWorked) : currentActivePods;
       const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - harvestLbs) * 100) / 100);
       const isFinished = newActivePods <= 0 || newRemainingLbs <= 0.01;
-      const newStatus = isFinished ? "Harvested" : getInventoryStatus(selected) || "Active";
-      const newStage = isFinished ? "Harvested" : getInventoryStage(selected) || "Ready";
+      const towerName = getInventoryTower(selected);
+      const newStatus = isFinished && towerName ? "Active" : (isFinished ? "Harvested" : getInventoryStatus(selected) || "Active");
+      const newStage = isFinished && towerName ? "Empty" : (isFinished ? "Harvested" : getInventoryStage(selected) || "Ready");
       const actionNote = [
         harvestActionType,
         `${outputQty} ${getUnitLabel(harvestOutputUnit)}`,
@@ -3083,19 +3112,19 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       const updateResult = await postToBackend({
         action: "updateProductionInventoryRow",
         rowNumber: selected.rowNumber,
-        tower: getInventoryTower(selected),
+        tower: towerName,
         towerType: getInventoryTowerType(selected),
         maxPods: toNumber(getInventoryMaxPods(selected)),
         activePods: newActivePods,
-        crop: getInventoryCrop(selected),
+        crop: isFinished && towerName ? "" : getInventoryCrop(selected),
         stage: newStage,
-        seededDate: getInventorySeededDate(selected),
-        transplantDate: getInventoryTransplantDate(selected),
-        estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
-        expectedLbs: currentExpectedLbs,
-        remainingExpectedLbs: newRemainingLbs,
+        seededDate: isFinished && towerName ? "" : getInventorySeededDate(selected),
+        transplantDate: isFinished && towerName ? "" : getInventoryTransplantDate(selected),
+        estimatedReadyDate: isFinished && towerName ? "" : getInventoryEstimatedReadyDate(selected),
+        expectedLbs: isFinished && towerName ? 0 : currentExpectedLbs,
+        remainingExpectedLbs: isFinished && towerName ? 0 : newRemainingLbs,
         status: newStatus,
-        notes: updatedNotes,
+        notes: isFinished && towerName ? "" : updatedNotes,
       });
 
       if (!updateResult.ok) {
@@ -3104,8 +3133,10 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       }
 
       setDailyMessage(
-        isFinished
-          ? `Harvest saved for ${getInventoryCrop(selected)}. That row is complete and removed from Ready to Harvest.`
+        isFinished && towerName
+          ? `Harvest complete — ${towerName} is now available for new plants.`
+          : isFinished
+          ? `Harvest saved for ${getInventoryCrop(selected)}. Row complete.`
           : `Harvest saved for ${getInventoryCrop(selected)}.`
       );
       clearReadyHarvestAction();
@@ -3152,19 +3183,19 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           towerType: getInventoryTowerType(selected),
           maxPods: toNumber(getInventoryMaxPods(selected)),
           activePods: 0,
-          crop,
-          stage: "Scrapped",
-          seededDate: getInventorySeededDate(selected),
-          transplantDate: getInventoryTransplantDate(selected),
-          estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
-          expectedLbs: currentExpectedLbs,
+          crop: "",
+          stage: "Empty",
+          seededDate: "",
+          transplantDate: "",
+          estimatedReadyDate: "",
+          expectedLbs: 0,
           remainingExpectedLbs: 0,
-          status: "Scrapped",
-          notes: [getInventoryNotes(selected), actionNote].filter(Boolean).join(" | "),
+          status: "Active",
+          notes: "",
         });
         if (!updateResult.ok) { setQhMessage(updateResult.message || "Scrap logged but inventory update failed."); setQhSaving(false); return; }
 
-        setQhMessage(`${crop} marked as scrapped and removed from active inventory.`);
+        setQhMessage(`${crop} scrapped — ${getInventoryTower(selected)} is now available for new plants.`);
       } else {
         const outputQty = toNumber(qhQty);
         const podsWorked = toNumber(qhPods);
@@ -3178,19 +3209,20 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         const newActivePods = isFullHarvest ? Math.max(0, currentActivePods - podsWorked) : currentActivePods;
         const newRemainingLbs = Math.max(0, Math.round((currentRemainingLbs - harvestLbs) * 100) / 100);
         const isFinished = newActivePods <= 0 || newRemainingLbs <= 0.01;
-        const newStatus = isFinished ? "Harvested" : getInventoryStatus(selected) || "Active";
-        const newStage = isFinished ? "Harvested" : isFullHarvest ? "Ready" : "Trimmed";
+        const qhTowerName = getInventoryTower(selected);
+        const newStatus = isFinished && qhTowerName ? "Active" : (isFinished ? "Harvested" : getInventoryStatus(selected) || "Active");
+        const newStage = isFinished && qhTowerName ? "Empty" : (isFinished ? "Harvested" : isFullHarvest ? "Ready" : "Trimmed");
         const actionNote = [qhType, `${outputQty} ${getUnitLabel(qhUnit)}`, isFullHarvest ? `${podsWorked} pods harvested` : `${podsWorked} pods trimmed`, qhNote].filter(Boolean).join(" | ");
 
         const actionResult = await postToBackend({
           action: "saveStaffAction",
           mode: "Harvest",
-          tower: getInventoryTower(selected),
+          tower: qhTowerName,
           crop,
           lbs: harvestLbs,
           podsChanged: isFullHarvest ? podsWorked : "",
           status: isFinished ? "Completed" : "Partial",
-          stage: newStage,
+          stage: isFinished ? "Harvested" : newStage,
           date: formatDateInput(new Date()),
           scrapType: "",
           note: actionNote,
@@ -3200,19 +3232,19 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         const updateResult = await postToBackend({
           action: "updateProductionInventoryRow",
           rowNumber: selected.rowNumber,
-          tower: getInventoryTower(selected),
+          tower: qhTowerName,
           towerType: getInventoryTowerType(selected),
           maxPods: toNumber(getInventoryMaxPods(selected)),
           activePods: newActivePods,
-          crop,
+          crop: isFinished && qhTowerName ? "" : crop,
           stage: newStage,
-          seededDate: getInventorySeededDate(selected),
-          transplantDate: getInventoryTransplantDate(selected),
-          estimatedReadyDate: getInventoryEstimatedReadyDate(selected),
-          expectedLbs: currentExpectedLbs,
-          remainingExpectedLbs: newRemainingLbs,
+          seededDate: isFinished && qhTowerName ? "" : getInventorySeededDate(selected),
+          transplantDate: isFinished && qhTowerName ? "" : getInventoryTransplantDate(selected),
+          estimatedReadyDate: isFinished && qhTowerName ? "" : getInventoryEstimatedReadyDate(selected),
+          expectedLbs: isFinished && qhTowerName ? 0 : currentExpectedLbs,
+          remainingExpectedLbs: isFinished && qhTowerName ? 0 : newRemainingLbs,
           status: newStatus,
-          notes: [getInventoryNotes(selected), actionNote].filter(Boolean).join(" | "),
+          notes: isFinished && qhTowerName ? "" : [getInventoryNotes(selected), actionNote].filter(Boolean).join(" | "),
         });
         if (!updateResult.ok) { setQhMessage(updateResult.message || "Harvest logged but inventory update failed."); setQhSaving(false); return; }
 
@@ -3226,7 +3258,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           }
         }
 
-        setQhMessage(isFinished ? `Full harvest complete — ${crop} removed from active inventory.` : `${qhType} saved for ${crop}.`);
+        setQhMessage(isFinished && qhTowerName ? `Harvest complete — ${qhTowerName} is now available for new plants.` : isFinished ? `Harvest complete for ${crop}.` : `${qhType} saved for ${crop}.`);
       }
 
       setQhRowNumber("");
@@ -4222,6 +4254,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         <MiniMetric label="Harvested This Week (lbs)" value={weeklyMetrics.harvestedThisWeek} />
         <MiniMetric label="Scrapped This Week (lbs)" value={weeklyMetrics.scrappedThisWeek} />
         <MiniMetric label="Pods in Production" value={dashboardStats.podsInProduction} />
+        <MiniMetric label="Available Towers" value={emptyTowers.length} />
         <MiniMetric label="Given to Kitchen (lbs)" value={dashboardStats.kitchenLbs} />
         <MiniMetric label="Given to Pantry (lbs)" value={dashboardStats.pantryLbs} />
       </MetricGrid>
@@ -4648,6 +4681,34 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       </div>
     </Panel>
 
+    {emptyTowers.length > 0 && (
+      <Panel title="Available Towers">
+        <div style={{ fontSize: 13, color: "#475569", marginBottom: 10 }}>
+          These towers have been fully harvested or scrapped and are ready to receive new plants.
+        </div>
+        <TableScroll>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Tower</th>
+                <th style={thStyle}>Type</th>
+                <th style={thStyle}>Max Pods</th>
+              </tr>
+            </thead>
+            <tbody>
+              {emptyTowers.map((t) => (
+                <tr key={t.rowNumber}>
+                  <td style={tdStyle}>{getInventoryTower(t)}</td>
+                  <td style={tdStyle}>{getInventoryTowerType(t)}</td>
+                  <td style={tdStyle}>{getInventoryMaxPods(t)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableScroll>
+      </Panel>
+    )}
+
     <Panel title="Harvest a Tower">
       {/* Step 1: pick a tower */}
       <FormGrid columns={2}>
@@ -4659,7 +4720,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           >
             <option value="">— choose a tower —</option>
             {activeInventory
-              .filter((item) => !!getInventoryTower(item) && normalizeStatus(getInventoryStage(item)) !== "seeded")
+              .filter((item) => { const s = normalizeStatus(getInventoryStage(item)); return !!getInventoryTower(item) && s !== "seeded" && s !== "empty"; })
               .slice()
               .sort(sortInventoryByTowerLayout)
               .map((item) => (
