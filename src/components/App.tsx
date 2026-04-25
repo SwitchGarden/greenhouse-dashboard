@@ -791,6 +791,7 @@ export default function App() {
   const [editNote, setEditNote] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editMessage, setEditMessage] = useState("");
+  const [editUndoConfirm, setEditUndoConfirm] = useState(false);
 
   // Transplant form
   const [transplantRowNumber, setTransplantRowNumber] = useState("");
@@ -2877,6 +2878,75 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       setEditingStaffRow(null);
       setEditMessage("");
     }, 1500);
+    setEditSaving(false);
+  };
+
+  const handleUndoStaffAction = async () => {
+    if (!editingStaffRow) return;
+    setEditSaving(true);
+    setEditMessage("");
+
+    const tower = getStaffTower(editingStaffRow);
+    const crop = getStaffCrop(editingStaffRow);
+    const podsChanged = toNumber(getStaffPodsChanged(editingStaffRow));
+    const lbs = toNumber(getStaffLbs(editingStaffRow));
+
+    // Search all non-closed inventory rows for this tower (includes Harvested rows)
+    const invRow = tower
+      ? [...productionInventory]
+          .filter(r => normalizeStatus(getInventoryStatus(r)) !== "closed")
+          .sort((a, b) => b.rowNumber - a.rowNumber)
+          .find(r => getInventoryTower(r) === tower)
+      : null;
+
+    if (!invRow) {
+      setEditMessage("Could not find this tower in production inventory.");
+      setEditSaving(false);
+      return;
+    }
+
+    const currentStage = normalizeStatus(getInventoryStage(invRow));
+    const currentStatus = normalizeStatus(getInventoryStatus(invRow));
+    const wasFullyHarvested = currentStage === "empty" || currentStatus === "harvested";
+    const restoredPods = toNumber(getInventoryActivePods(invRow)) + podsChanged;
+    const restoredRemainingLbs = toNumber(getInventoryRemainingExpectedLbs(invRow)) + lbs;
+
+    await postToBackend({
+      action: "updateProductionInventoryRow",
+      rowNumber: invRow.rowNumber,
+      tower,
+      towerType: getInventoryTowerType(invRow),
+      maxPods: toNumber(getInventoryMaxPods(invRow)),
+      activePods: restoredPods,
+      crop: getInventoryCrop(invRow) || crop,
+      stage: wasFullyHarvested ? "Ready" : getInventoryStage(invRow),
+      seededDate: getInventorySeededDate(invRow),
+      transplantDate: getInventoryTransplantDate(invRow),
+      estimatedReadyDate: getInventoryEstimatedReadyDate(invRow),
+      expectedLbs: toNumber(getInventoryExpectedLbs(invRow)),
+      remainingExpectedLbs: restoredRemainingLbs,
+      status: "Active",
+      notes: getInventoryNotes(invRow),
+    });
+
+    const originalNote = getStaffNote(editingStaffRow) || "";
+    await postToBackend({
+      action: "updateStaffActionRow",
+      rowNumber: editingStaffRow.rowNumber,
+      lbs: 0,
+      podsChanged: 0,
+      note: `[REVERSED] ${originalNote}`.trim(),
+    });
+
+    await Promise.all([loadStaffActions(), loadProductionInventory()]);
+
+    const dateWarning = wasFullyHarvested ? " Seeded/transplant dates were cleared — update them in Production Inventory." : "";
+    setEditMessage(`Tower restored.${dateWarning}`);
+    setTimeout(() => {
+      setEditingStaffRow(null);
+      setEditUndoConfirm(false);
+      setEditMessage("");
+    }, 3000);
     setEditSaving(false);
   };
 
@@ -5268,6 +5338,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
           }}>
             <h3 style={{ margin: "0 0 16px 0", fontSize: 18 }}>Correct Staff Entry</h3>
+
+            {/* Entry summary */}
             <div style={{
               background: "#f1f5f9", borderRadius: 8, padding: 12,
               marginBottom: 16, fontSize: 13,
@@ -5279,47 +5351,118 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 {formatDateTimeDisplay(getStaffTimestamp(editingStaffRow))}
               </div>
             </div>
-            <FormGrid columns={2}>
-              <Field label="Lbs (corrected)">
-                <input
-                  type="number" min="0" step="0.01"
-                  value={editLbs}
-                  onChange={e => setEditLbs(e.target.value)}
-                  style={inputStyle}
-                />
-              </Field>
-              <Field label="Pods Changed (corrected)">
-                <input
-                  type="number" min="0"
-                  value={editPods}
-                  onChange={e => setEditPods(e.target.value)}
-                  style={inputStyle}
-                />
-              </Field>
-            </FormGrid>
-            <div style={{ marginTop: 12 }}>
-              <Field label="Reason for correction">
-                <textarea
-                  value={editNote}
-                  onChange={e => setEditNote(e.target.value)}
-                  style={textareaStyle}
-                  placeholder="e.g. Entered 44 pods by mistake, should be 14"
-                />
-              </Field>
-            </div>
-            <ActionRow message={editMessage}>
-              <button
-                onClick={handleEditStaffAction}
-                disabled={editSaving}
-                className={editSaving ? "btn-saving" : ""}
-                style={primaryButtonStyle}
-              >
-                {editSaving ? "Saving…" : "Save Correction"}
-              </button>
-              <button onClick={() => setEditingStaffRow(null)} style={secondaryButtonStyle}>
-                Cancel
-              </button>
-            </ActionRow>
+
+            {/* Undo confirmation panel */}
+            {editUndoConfirm ? (
+              <div style={{
+                background: "#fef2f2", border: "1px solid #fca5a5",
+                borderRadius: 10, padding: 16, marginBottom: 16,
+              }}>
+                <div style={{ fontWeight: 700, color: "#991b1b", marginBottom: 8 }}>
+                  Undo this harvest?
+                </div>
+                <div style={{ fontSize: 13, color: "#7f1d1d", marginBottom: 12 }}>
+                  This will add <strong>{toNumber(getStaffPodsChanged(editingStaffRow))} pods</strong> and{" "}
+                  <strong>{Math.round(toNumber(getStaffLbs(editingStaffRow)) * 100) / 100} lbs</strong> back
+                  to <strong>{getStaffTower(editingStaffRow) || "this entry"}</strong> and
+                  restore the stage to Ready. The staff log entry will be marked [REVERSED].
+                  {(() => {
+                    const tower = getStaffTower(editingStaffRow);
+                    const invRow = tower
+                      ? [...productionInventory]
+                          .filter(r => normalizeStatus(getInventoryStatus(r)) !== "closed")
+                          .sort((a, b) => b.rowNumber - a.rowNumber)
+                          .find(r => getInventoryTower(r) === tower)
+                      : null;
+                    const wasFullyHarvested = invRow && (
+                      normalizeStatus(getInventoryStage(invRow)) === "empty" ||
+                      normalizeStatus(getInventoryStatus(invRow)) === "harvested"
+                    );
+                    return wasFullyHarvested ? (
+                      <div style={{ marginTop: 8, color: "#b45309", fontWeight: 600 }}>
+                        Note: this was a full harvest — seeded and transplant dates were
+                        cleared and will need to be re-entered in Production Inventory.
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+                <ActionRow message={editMessage}>
+                  <button
+                    onClick={handleUndoStaffAction}
+                    disabled={editSaving}
+                    className={editSaving ? "btn-saving" : ""}
+                    style={{ ...primaryButtonStyle, background: "#dc2626" }}
+                  >
+                    {editSaving ? "Restoring…" : "Yes, Undo Harvest"}
+                  </button>
+                  <button
+                    onClick={() => setEditUndoConfirm(false)}
+                    style={secondaryButtonStyle}
+                    disabled={editSaving}
+                  >
+                    Go Back
+                  </button>
+                </ActionRow>
+              </div>
+            ) : (
+              <>
+                {/* Correction fields */}
+                <FormGrid columns={2}>
+                  <Field label="Lbs (corrected)">
+                    <input
+                      type="number" min="0" step="0.01"
+                      value={editLbs}
+                      onChange={e => setEditLbs(e.target.value)}
+                      style={inputStyle}
+                    />
+                  </Field>
+                  <Field label="Pods Changed (corrected)">
+                    <input
+                      type="number" min="0"
+                      value={editPods}
+                      onChange={e => setEditPods(e.target.value)}
+                      style={inputStyle}
+                    />
+                  </Field>
+                </FormGrid>
+                <div style={{ marginTop: 12 }}>
+                  <Field label="Reason for correction">
+                    <textarea
+                      value={editNote}
+                      onChange={e => setEditNote(e.target.value)}
+                      style={textareaStyle}
+                      placeholder="e.g. Entered 44 pods by mistake, should be 14"
+                    />
+                  </Field>
+                </div>
+                <ActionRow message={editMessage}>
+                  <button
+                    onClick={handleEditStaffAction}
+                    disabled={editSaving}
+                    className={editSaving ? "btn-saving" : ""}
+                    style={primaryButtonStyle}
+                  >
+                    {editSaving ? "Saving…" : "Save Correction"}
+                  </button>
+                  {getStaffTower(editingStaffRow) && (
+                    <button
+                      onClick={() => { setEditUndoConfirm(true); setEditMessage(""); }}
+                      style={{ ...secondaryButtonStyle, color: "#dc2626", borderColor: "#fca5a5" }}
+                      disabled={editSaving}
+                    >
+                      Undo Harvest
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setEditingStaffRow(null); setEditUndoConfirm(false); }}
+                    style={secondaryButtonStyle}
+                    disabled={editSaving}
+                  >
+                    Cancel
+                  </button>
+                </ActionRow>
+              </>
+            )}
           </div>
         </div>
       )}
