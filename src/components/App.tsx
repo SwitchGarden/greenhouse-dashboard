@@ -930,6 +930,7 @@ export default function App() {
         podsInTowers: number;
         pipelineTowers: number;
         nextReadyDate: string;
+        lastReadyDate: string;
         readyNowLbs: number;
         readyNowPlants: number;
         futureEntries: Array<{ readyDate: string; lbs: number; plants: number }>;
@@ -949,6 +950,7 @@ export default function App() {
         podsInTowers: 0,
         pipelineTowers: 0,
         nextReadyDate: "",
+        lastReadyDate: "",
         readyNowLbs: 0,
         readyNowPlants: 0,
         futureEntries: [],
@@ -1010,6 +1012,9 @@ export default function App() {
       if (readyDate) {
         if (!current.nextReadyDate || new Date(readyDate) < new Date(current.nextReadyDate)) {
           current.nextReadyDate = formatDateInput(readyDate);
+        }
+        if (!current.lastReadyDate || new Date(readyDate) > new Date(current.lastReadyDate)) {
+          current.lastReadyDate = formatDateInput(readyDate);
         }
       }
 
@@ -4460,7 +4465,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           <MiniMetric label="Lbs in Production" value={Math.round((inventoryByCrop.get(staffLookupCrop)?.availableLbs || 0) * 100) / 100} />
           <MiniMetric label="Ready Now Lbs" value={Math.round((inventoryByCrop.get(staffLookupCrop)?.readyNowLbs || 0) * 100) / 100} />
           <MiniMetric label="Pipeline Towers" value={inventoryByCrop.get(staffLookupCrop)?.pipelineTowers || 0} />
-          <MiniMetric label="Next Ready Date" value={inventoryByCrop.get(staffLookupCrop)?.nextReadyDate || "-"} />
+          <MiniMetric label="Ready Date Range" value={(() => {
+            const c = inventoryByCrop.get(staffLookupCrop);
+            if (!c?.nextReadyDate) return "-";
+            if (!c.lastReadyDate || c.nextReadyDate === c.lastReadyDate) return formatDateDisplay(c.nextReadyDate);
+            return `${formatDateDisplay(c.nextReadyDate)} – ${formatDateDisplay(c.lastReadyDate)}`;
+          })()} />
         </MetricGrid>
       ) : (
         <div style={{ marginTop: 12, fontSize: 14, color: "#475569" }}>Choose a crop to see towers, pods, and pounds in production.</div>
