@@ -784,6 +784,14 @@ export default function App() {
   const [showMarketSettings, setShowMarketSettings] = useState(false);
   const [marketConfigSaveStatus, setMarketConfigSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
+  // Staff action correction
+  const [editingStaffRow, setEditingStaffRow] = useState<StaffActionRow | null>(null);
+  const [editLbs, setEditLbs] = useState("");
+  const [editPods, setEditPods] = useState("");
+  const [editNote, setEditNote] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editMessage, setEditMessage] = useState("");
+
   // Transplant form
   const [transplantRowNumber, setTransplantRowNumber] = useState("");
   const [transplantTower, setTransplantTower] = useState("");
@@ -2807,6 +2815,71 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     setSeededEditMessage("");
   };
 
+  const handleEditStaffAction = async () => {
+    if (!editingStaffRow) return;
+    setEditSaving(true);
+    setEditMessage("");
+
+    const oldPods = toNumber(getStaffPodsChanged(editingStaffRow));
+    const newPods = Number(editPods) || 0;
+    const podDelta = oldPods - newPods;
+
+    const correctionNote = editNote.trim()
+      ? editNote.trim()
+      : `Corrected from ${oldPods} pods / ${toNumber(getStaffLbs(editingStaffRow))} lbs`;
+
+    const result = await postToBackend({
+      action: "updateStaffActionRow",
+      rowNumber: editingStaffRow.rowNumber,
+      lbs: Number(editLbs) || 0,
+      podsChanged: newPods,
+      note: correctionNote,
+    });
+
+    if (!result.ok) {
+      setEditMessage("Failed to save — check connection and try again.");
+      setEditSaving(false);
+      return;
+    }
+
+    // If pods changed and tower is known, correct the production inventory
+    if (podDelta !== 0) {
+      const tower = getStaffTower(editingStaffRow);
+      if (tower) {
+        const invRow = activeInventory.find((r) => getInventoryTower(r) === tower);
+        if (invRow) {
+          const correctedPods = Math.max(0, toNumber(getInventoryActivePods(invRow)) + podDelta);
+          await postToBackend({
+            action: "updateProductionInventoryRow",
+            rowNumber: invRow.rowNumber,
+            tower: getInventoryTower(invRow),
+            towerType: getInventoryTowerType(invRow),
+            maxPods: toNumber(getInventoryMaxPods(invRow)),
+            activePods: correctedPods,
+            crop: getInventoryCrop(invRow),
+            stage: getInventoryStage(invRow),
+            seededDate: getInventorySeededDate(invRow),
+            transplantDate: getInventoryTransplantDate(invRow),
+            estimatedReadyDate: getInventoryEstimatedReadyDate(invRow),
+            expectedLbs: toNumber(getInventoryExpectedLbs(invRow)),
+            remainingExpectedLbs: toNumber(getInventoryRemainingExpectedLbs(invRow)),
+            status: getInventoryStatus(invRow),
+            notes: getInventoryNotes(invRow),
+          });
+          await loadProductionInventory();
+        }
+      }
+    }
+
+    await loadStaffActions();
+    setEditMessage("Correction saved.");
+    setTimeout(() => {
+      setEditingStaffRow(null);
+      setEditMessage("");
+    }, 1500);
+    setEditSaving(false);
+  };
+
   const handleTransplantSeeded = async () => {
     if (!seededTransplantRowNumber || !seededTransplantTower) {
       setSeededTransplantMessage("Please enter a tower name.");
@@ -3894,12 +3967,13 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                       <th style={thStyle}>Lbs</th>
                       <th style={thStyle}>Pods</th>
                       <th style={thStyle}>Note</th>
+                      <th style={thStyle}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredRecentActivity.length === 0 ? (
                       <tr>
-                        <td colSpan={7} style={tdStyle}>No recent activity.</td>
+                        <td colSpan={8} style={tdStyle}>No recent activity.</td>
                       </tr>
                     ) : (
                       filteredRecentActivity.slice(0, 10).map((row) => {
@@ -3916,6 +3990,20 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                             <td style={tdStyle}>{lbs > 0 ? Math.round(lbs * 100) / 100 : ""}</td>
                             <td style={tdStyle}>{pods > 0 ? pods : ""}</td>
                             <td style={{ ...tdStyle, maxWidth: 220 }} title={note}>{shortNote}</td>
+                            <td style={tdStyle}>
+                              <button
+                                onClick={() => {
+                                  setEditingStaffRow(row);
+                                  setEditLbs(String(toNumber(getStaffLbs(row))));
+                                  setEditPods(String(toNumber(getStaffPodsChanged(row))));
+                                  setEditNote(getStaffNote(row) || "");
+                                  setEditMessage("");
+                                }}
+                                style={{ ...secondaryButtonStyle, padding: "4px 10px", fontSize: 12, minHeight: 32 }}
+                              >
+                                Edit
+                              </button>
+                            </td>
                           </tr>
                         );
                       })
@@ -5115,12 +5203,13 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <th style={thStyle}>Lbs</th>
               <th style={thStyle}>Pods</th>
               <th style={thStyle}>Note</th>
+              <th style={thStyle}></th>
             </tr>
           </thead>
           <tbody>
             {filteredRecentActivity.length === 0 ? (
               <tr>
-                <td colSpan={7} style={tdStyle}>No recent activity found.</td>
+                <td colSpan={8} style={tdStyle}>No recent activity found.</td>
               </tr>
             ) : (
               filteredRecentActivity.map((row) => {
@@ -5137,6 +5226,20 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     <td style={tdStyle}>{lbs > 0 ? Math.round(lbs * 100) / 100 : ""}</td>
                     <td style={tdStyle}>{pods > 0 ? pods : ""}</td>
                     <td style={{ ...tdStyle, maxWidth: 200 }} title={note}>{shortNote}</td>
+                    <td style={tdStyle}>
+                      <button
+                        onClick={() => {
+                          setEditingStaffRow(row);
+                          setEditLbs(String(toNumber(getStaffLbs(row))));
+                          setEditPods(String(toNumber(getStaffPodsChanged(row))));
+                          setEditNote(getStaffNote(row) || "");
+                          setEditMessage("");
+                        }}
+                        style={{ ...secondaryButtonStyle, padding: "4px 10px", fontSize: 12, minHeight: 32 }}
+                      >
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 );
               })
@@ -5151,6 +5254,75 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   </div>
 )}
       </div>
+
+      {/* Staff Action Edit Modal */}
+      {editingStaffRow && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+          zIndex: 1000, display: "flex", alignItems: "center",
+          justifyContent: "center", padding: 16,
+        }}>
+          <div style={{
+            background: "white", borderRadius: 16, padding: 24,
+            maxWidth: 480, width: "100%",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          }}>
+            <h3 style={{ margin: "0 0 16px 0", fontSize: 18 }}>Correct Staff Entry</h3>
+            <div style={{
+              background: "#f1f5f9", borderRadius: 8, padding: 12,
+              marginBottom: 16, fontSize: 13,
+            }}>
+              <strong>{getStaffMode(editingStaffRow)}</strong>
+              {getStaffTower(editingStaffRow) ? ` — ${getStaffTower(editingStaffRow)}` : ""}
+              {getStaffCrop(editingStaffRow) ? ` — ${getStaffCrop(editingStaffRow)}` : ""}
+              <div style={{ color: "#64748b", marginTop: 4 }}>
+                {formatDateTimeDisplay(getStaffTimestamp(editingStaffRow))}
+              </div>
+            </div>
+            <FormGrid columns={2}>
+              <Field label="Lbs (corrected)">
+                <input
+                  type="number" min="0" step="0.01"
+                  value={editLbs}
+                  onChange={e => setEditLbs(e.target.value)}
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="Pods Changed (corrected)">
+                <input
+                  type="number" min="0"
+                  value={editPods}
+                  onChange={e => setEditPods(e.target.value)}
+                  style={inputStyle}
+                />
+              </Field>
+            </FormGrid>
+            <div style={{ marginTop: 12 }}>
+              <Field label="Reason for correction">
+                <textarea
+                  value={editNote}
+                  onChange={e => setEditNote(e.target.value)}
+                  style={textareaStyle}
+                  placeholder="e.g. Entered 44 pods by mistake, should be 14"
+                />
+              </Field>
+            </div>
+            <ActionRow message={editMessage}>
+              <button
+                onClick={handleEditStaffAction}
+                disabled={editSaving}
+                className={editSaving ? "btn-saving" : ""}
+                style={primaryButtonStyle}
+              >
+                {editSaving ? "Saving…" : "Save Correction"}
+              </button>
+              <button onClick={() => setEditingStaffRow(null)} style={secondaryButtonStyle}>
+                Cancel
+              </button>
+            </ActionRow>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
