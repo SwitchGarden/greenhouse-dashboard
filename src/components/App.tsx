@@ -4897,33 +4897,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       </div>
     </Panel>
 
-    {emptyTowers.length > 0 && (
-      <Panel title="Available Towers">
-        <div style={{ fontSize: 13, color: "#475569", marginBottom: 10 }}>
-          These towers have been fully harvested or scrapped and are ready to receive new plants.
-        </div>
-        <TableScroll>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Tower</th>
-                <th style={thStyle}>Type</th>
-                <th style={thStyle}>Max Pods</th>
-              </tr>
-            </thead>
-            <tbody>
-              {emptyTowers.map((t) => (
-                <tr key={t.rowNumber}>
-                  <td style={tdStyle}>{getInventoryTower(t)}</td>
-                  <td style={tdStyle}>{getInventoryTowerType(t)}</td>
-                  <td style={tdStyle}>{getInventoryMaxPods(t)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableScroll>
-      </Panel>
-    )}
 
     <Panel title="Harvest a Tower">
       {/* Step 1: pick a tower */}
