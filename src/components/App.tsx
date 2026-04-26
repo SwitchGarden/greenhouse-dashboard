@@ -1724,6 +1724,10 @@ const overdueOrders = useMemo(() => {
       .filter((row) => { const s = normalizeStatus(getInventoryStage(row)); return s !== "seeded" && s !== "empty"; })
       .reduce((sum, row) => sum + toNumber(getInventoryActivePods(row)), 0);
 
+    const activeSeeds = activeInventory
+      .filter((row) => normalizeStatus(getInventoryStage(row)) === "seeded")
+      .reduce((sum, row) => sum + toNumber(getInventoryActivePods(row)), 0);
+
     const fulfilledStatuses = ["harvested", "packed", "completed"];
     const kitchenLbs = salesOrders
       .filter((o) => {
@@ -1752,6 +1756,7 @@ const overdueOrders = useMemo(() => {
       harvestedPrevWeek: weeklyMetrics.harvestedPrevWeek,
       scrappedPrevWeek: weeklyMetrics.scrappedPrevWeek,
       podsInProduction,
+      activeSeeds,
       kitchenLbs,
       pantryLbs,
     };
@@ -3597,6 +3602,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <StatCard label="Harvested Prev Week (lbs)" value={dashboardStats.harvestedPrevWeek} />
               <StatCard label="Scrapped Prev Week (lbs)" value={dashboardStats.scrappedPrevWeek} />
               <StatCard label="Pods in Production" value={dashboardStats.podsInProduction} />
+              <StatCard label="Active Seeds" value={dashboardStats.activeSeeds} />
               <StatCard label="Total to Kitchen (lbs)" value={dashboardStats.kitchenLbs} />
               <StatCard label="Total to Pantry (lbs)" value={dashboardStats.pantryLbs} />
             </ResponsiveStatGrid>
