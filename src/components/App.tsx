@@ -812,7 +812,7 @@ export default function App() {
     try { localStorage.setItem("farmersMarketConfig", JSON.stringify(config)); } catch { /* ignore */ }
     try {
       const result = await postToBackend({ action: "saveMarketConfig", config });
-      setMarketConfigSaveStatus(result.ok ? "saved" : "saved");
+      setMarketConfigSaveStatus(result.ok ? "saved" : "error");
     } catch {
       setMarketConfigSaveStatus("saved");
     }
@@ -3026,7 +3026,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         estimatedReadyDate: seededEditSeededDate ? addDays(seededEditSeededDate, 42) : "",
       });
       if (result.ok) {
-        setSeededEditMessage("Saved.");
+        setSeededEditMessage("Entry updated successfully.");
         cancelEditSeededEntry();
         await loadProductionInventory();
       } else {
@@ -3775,9 +3775,15 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                                 </select>
                                 <button onClick={() => startEditSalesOrder(order)} style={primaryButtonStyle}>Edit</button>
                                 <button
-                                  onClick={() => handleCancelSalesOrder(order.rowNumber)}
+                                  onClick={() => {
+                                    const customer = getOrderCustomer(order) || "this order";
+                                    const crop = getOrderCrop(order) || "";
+                                    if (window.confirm(`Cancel ${crop ? crop + " order" : "order"} for ${customer}? This cannot be undone.`)) {
+                                      handleCancelSalesOrder(order.rowNumber);
+                                    }
+                                  }}
                                   style={{ ...secondaryButtonStyle, color: "#dc2626", borderColor: "#fca5a5" }}
-                                >Cancel</button>
+                                >Cancel Order</button>
                               </div>
                             </td>
                           </tr>
@@ -4797,7 +4803,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                           </button>
                           <button onClick={cancelEditSeededEntry} style={secondaryButtonStyle}>Cancel</button>
                         </div>
-                        {seededEditMessage && <div style={{ fontSize: 12, marginTop: 4, color: seededEditMessage === "Saved." ? "#16a34a" : "#dc2626" }}>{seededEditMessage}</div>}
+                        {seededEditMessage && <div style={{ fontSize: 12, marginTop: 4, color: seededEditMessage.startsWith("Entry updated") ? "#16a34a" : "#dc2626" }}>{seededEditMessage}</div>}
                       </td>
                     </tr>
                   );
@@ -5423,6 +5429,9 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             ) : (
               <>
                 {/* Correction fields */}
+                <div style={{ fontSize: 13, color: "#64748b", marginBottom: 10 }}>
+                  Update only the fields that were wrong — leave the others as-is.
+                </div>
                 <FormGrid columns={2}>
                   <Field label="Lbs (corrected)">
                     <input
