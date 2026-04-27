@@ -3464,9 +3464,20 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
         if (qhOrderRowNumber) {
           const linkedOrder = salesOrders.find((o) => String(o.rowNumber) === qhOrderRowNumber);
           if (linkedOrder) {
-            const orderQtyLbs = quantityToLbs(getOrderUnitType(linkedOrder), toNumber(getOrderQuantityNeeded(linkedOrder)));
-            const orderNewStatus = harvestLbs >= orderQtyLbs - 0.001 ? "Harvested" : "In Progress";
-            await postToBackend({ action: "updateOrderStatus", rowNumber: linkedOrder.rowNumber, status: orderNewStatus });
+            const orderUnitType = getOrderUnitType(linkedOrder);
+            const orderQtyLbs = quantityToLbs(orderUnitType, toNumber(getOrderQuantityNeeded(linkedOrder)));
+            const remainingLbs = Math.max(0, orderQtyLbs - harvestLbs);
+            if (remainingLbs <= 0.001) {
+              await postToBackend({ action: "updateOrderStatus", rowNumber: linkedOrder.rowNumber, status: "Harvested" });
+            } else {
+              const remainingQty = availableLbsToUnitQty(orderUnitType, remainingLbs, 0);
+              await postToBackend({
+                action: "updateSalesOrderRow",
+                rowNumber: linkedOrder.rowNumber,
+                quantityNeeded: remainingQty,
+                status: "In Progress",
+              });
+            }
             await loadSalesOrders();
           }
         }
@@ -4967,16 +4978,15 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <th style={thStyle}>Due Date</th>
               <th style={thStyle}>Customer</th>
               <th style={thStyle}>Crop</th>
-              <th style={thStyle}>Qty</th>
+              <th style={thStyle}>Qty Remaining</th>
               <th style={thStyle}>Unit</th>
               <th style={thStyle}>Status</th>
-              <th style={thStyle}>Action</th>
             </tr>
           </thead>
           <tbody>
             {harvestTodayTasks.length === 0 ? (
               <tr>
-                <td colSpan={7} style={tdStyle}>No orders due in the next 7 days.</td>
+                <td colSpan={6} style={tdStyle}>No orders due in the next 7 days.</td>
               </tr>
             ) : (
               harvestTodayTasks.map((task) => {
@@ -4997,14 +5007,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                     <td style={tdStyle}>{task.quantityNeeded}</td>
                     <td style={tdStyle}>{task.unitType}</td>
                     <td style={tdStyle}>{task.status}</td>
-                    <td style={tdStyle}>
-                      <button
-                        onClick={() => handleOrderStatusChange(task.rowNumber, "Harvested")}
-                        style={{ ...primaryButtonStyle, background: "#16a34a", fontSize: 13, padding: "5px 10px" }}
-                      >
-                        Mark Harvested
-                      </button>
-                    </td>
                   </tr>
                 );
               })
