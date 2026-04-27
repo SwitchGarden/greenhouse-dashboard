@@ -1729,11 +1729,16 @@ const overdueOrders = useMemo(() => {
       .reduce((sum, row) => sum + toNumber(getInventoryActivePods(row)), 0);
 
     const fulfilledStatuses = ["harvested", "packed", "completed"];
+    const currStartStr = formatDateInput(getStartOfWeek(new Date()));
+    const currEndStr = formatDateInput(getEndOfWeek(new Date()));
+
     const kitchenLbs = salesOrders
       .filter((o) => {
         const customer = (getOrderCustomer(o) || "").toLowerCase();
         const status = normalizeStatus(getOrderStatus(o));
-        return customer.includes("kitchen") && fulfilledStatuses.includes(status);
+        const delivery = formatDateInput(getOrderRequestedDeliveryDate(o));
+        return customer.includes("kitchen") && fulfilledStatuses.includes(status) &&
+               !!delivery && delivery >= currStartStr && delivery <= currEndStr;
       })
       .reduce((sum, o) => sum + quantityToLbs(getOrderUnitType(o), toNumber(getOrderQuantityNeeded(o))), 0);
 
@@ -1741,7 +1746,9 @@ const overdueOrders = useMemo(() => {
       .filter((o) => {
         const customer = (getOrderCustomer(o) || "").toLowerCase();
         const status = normalizeStatus(getOrderStatus(o));
-        return customer.includes("pantry") && fulfilledStatuses.includes(status);
+        const delivery = formatDateInput(getOrderRequestedDeliveryDate(o));
+        return customer.includes("pantry") && fulfilledStatuses.includes(status) &&
+               !!delivery && delivery >= currStartStr && delivery <= currEndStr;
       })
       .reduce((sum, o) => sum + quantityToLbs(getOrderUnitType(o), toNumber(getOrderQuantityNeeded(o))), 0);
 
@@ -3632,8 +3639,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <StatCard label="Scrapped Prev Week (lbs)" value={dashboardStats.scrappedPrevWeek} />
               <StatCard label="Pods in Production" value={dashboardStats.podsInProduction} />
               <StatCard label="Active Seeds" value={dashboardStats.activeSeeds} />
-              <StatCard label="Total to Kitchen (lbs)" value={dashboardStats.kitchenLbs} />
-              <StatCard label="Total to Pantry (lbs)" value={dashboardStats.pantryLbs} />
+              <StatCard label="This Week to Kitchen (lbs)" value={dashboardStats.kitchenLbs} />
+              <StatCard label="This Week to Pantry (lbs)" value={dashboardStats.pantryLbs} />
               <StatCard label="Prev Week to Kitchen (lbs)" value={dashboardStats.kitchenLbsPrevWeek} />
               <StatCard label="Prev Week to Pantry (lbs)" value={dashboardStats.pantryLbsPrevWeek} />
             </ResponsiveStatGrid>
