@@ -4941,6 +4941,25 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
 
     <Panel title="Orders Due This Week">
+      <div style={{ marginBottom: 12, display: "flex", justifyContent: "flex-end" }}>
+        <button
+          style={secondaryButtonStyle}
+          onClick={() => printSection(
+            "Orders Due This Week",
+            ["Due Date", "Customer", "Crop", "Qty", "Unit", "Status"],
+            harvestTodayTasks.map(task => [
+              formatDateDisplay(task.dueDate),
+              task.customer,
+              task.crop,
+              String(task.quantityNeeded),
+              task.unitType,
+              task.status,
+            ])
+          )}
+        >
+          🖨 Print
+        </button>
+      </div>
       <TableScroll>
         <table style={tableStyle}>
           <thead>
