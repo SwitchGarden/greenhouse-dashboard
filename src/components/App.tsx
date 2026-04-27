@@ -4951,27 +4951,41 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <th style={thStyle}>Qty</th>
               <th style={thStyle}>Unit</th>
               <th style={thStyle}>Status</th>
+              <th style={thStyle}>Action</th>
             </tr>
           </thead>
           <tbody>
             {harvestTodayTasks.length === 0 ? (
               <tr>
-                <td colSpan={6} style={tdStyle}>No orders due in the next 7 days.</td>
+                <td colSpan={7} style={tdStyle}>No orders due in the next 7 days.</td>
               </tr>
             ) : (
               harvestTodayTasks.map((task) => {
                 const overdue = isOverdue(task.dueDate);
                 const dueToday = isDueToday(task.dueDate);
-                const rowBg = overdue ? "#fef2f2" : dueToday ? "#fefce8" : undefined;
-                const dateLabel = overdue ? `${formatDateDisplay(task.dueDate)} ⚠ Overdue` : dueToday ? `${formatDateDisplay(task.dueDate)} — Today` : formatDateDisplay(task.dueDate);
+                const dotColor = overdue ? "#dc2626" : dueToday ? "#d97706" : "#16a34a";
+                const dateLabel = overdue ? `${formatDateDisplay(task.dueDate)} Overdue` : dueToday ? `${formatDateDisplay(task.dueDate)} Today` : formatDateDisplay(task.dueDate);
                 return (
-                  <tr key={task.rowNumber} style={rowBg ? { background: rowBg } : undefined}>
-                    <td style={{ ...tdStyle, fontWeight: (overdue || dueToday) ? 700 : undefined, color: overdue ? "#dc2626" : dueToday ? "#92400e" : undefined }}>{dateLabel}</td>
+                  <tr key={task.rowNumber}>
+                    <td style={tdStyle}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ width: 10, height: 10, borderRadius: "50%", background: dotColor, flexShrink: 0, display: "inline-block" }} />
+                        <span style={{ fontWeight: (overdue || dueToday) ? 700 : undefined }}>{dateLabel}</span>
+                      </span>
+                    </td>
                     <td style={tdStyle}>{task.customer}</td>
                     <td style={tdStyle}>{task.crop}</td>
                     <td style={tdStyle}>{task.quantityNeeded}</td>
                     <td style={tdStyle}>{task.unitType}</td>
                     <td style={tdStyle}>{task.status}</td>
+                    <td style={tdStyle}>
+                      <button
+                        onClick={() => handleOrderStatusChange(task.rowNumber, "Harvested")}
+                        style={{ ...primaryButtonStyle, background: "#16a34a", fontSize: 13, padding: "5px 10px" }}
+                      >
+                        Mark Harvested
+                      </button>
+                    </td>
                   </tr>
                 );
               })
