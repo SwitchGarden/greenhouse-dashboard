@@ -5013,7 +5013,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   ? { ...primaryButtonStyle, background: "#16a34a" }
                   : { ...secondaryButtonStyle, fontWeight: 600 }}
               >
-                Full Harvest
+                Pods Harvested
               </button>
               <button
                 onClick={() => { setQhType("Scrap"); setQhQty(""); setQhPods(""); setQhNote(""); }}
