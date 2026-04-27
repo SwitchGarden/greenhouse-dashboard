@@ -1588,22 +1588,21 @@ const readyToHarvestInventory = useMemo(() => {
 }, [activeInventory]);
 
 const harvestTodayTasks = useMemo(() => {
+  const today = new Date();
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const sevenDaysOut = new Date(todayOnly);
+  sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
+
   return openOrders
     .filter((order) => {
       const status = normalizeStatus(getOrderStatus(order));
       if (["completed", "cancelled", "harvested", "packed"].includes(status)) return false;
-
       const dueDate = getOrderRequestedDeliveryDate(order);
-      const cropName = getOrderCrop(order);
-
-      const hasReadyInventory = readyToHarvestInventory.some(
-        (item) => getInventoryCrop(item) === cropName
-      );
-
-      return (
-  isDueTodayOrTomorrow(dueDate) ||
-  isOverdue(dueDate)
-);
+      if (!dueDate) return false;
+      const due = new Date(dueDate);
+      if (Number.isNaN(due.getTime())) return false;
+      const dueOnly = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+      return dueOnly <= sevenDaysOut;
     })
     .map((order) => ({
       rowNumber: order.rowNumber,
@@ -1615,7 +1614,7 @@ const harvestTodayTasks = useMemo(() => {
       status: getOrderStatus(order),
     }))
     .sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
-}, [openOrders, readyToHarvestInventory]);
+}, [openOrders]);
 
 const packTodayTasks = useMemo(() => {
   return openOrders
@@ -4940,6 +4939,47 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       </div>
     </Panel>
 
+
+    <Panel title="Orders Due This Week">
+      <TableScroll>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Due Date</th>
+              <th style={thStyle}>Customer</th>
+              <th style={thStyle}>Crop</th>
+              <th style={thStyle}>Qty</th>
+              <th style={thStyle}>Unit</th>
+              <th style={thStyle}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {harvestTodayTasks.length === 0 ? (
+              <tr>
+                <td colSpan={6} style={tdStyle}>No orders due in the next 7 days.</td>
+              </tr>
+            ) : (
+              harvestTodayTasks.map((task) => {
+                const overdue = isOverdue(task.dueDate);
+                const dueToday = isDueToday(task.dueDate);
+                const rowBg = overdue ? "#fef2f2" : dueToday ? "#fefce8" : undefined;
+                const dateLabel = overdue ? `${formatDateDisplay(task.dueDate)} ⚠ Overdue` : dueToday ? `${formatDateDisplay(task.dueDate)} — Today` : formatDateDisplay(task.dueDate);
+                return (
+                  <tr key={task.rowNumber} style={rowBg ? { background: rowBg } : undefined}>
+                    <td style={{ ...tdStyle, fontWeight: (overdue || dueToday) ? 700 : undefined, color: overdue ? "#dc2626" : dueToday ? "#92400e" : undefined }}>{dateLabel}</td>
+                    <td style={tdStyle}>{task.customer}</td>
+                    <td style={tdStyle}>{task.crop}</td>
+                    <td style={tdStyle}>{task.quantityNeeded}</td>
+                    <td style={tdStyle}>{task.unitType}</td>
+                    <td style={tdStyle}>{task.status}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </TableScroll>
+    </Panel>
 
     <Panel title="Harvest a Tower">
       {/* Step 1: pick a tower */}
