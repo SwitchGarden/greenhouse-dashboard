@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type PageKey = "dashboard" | "inventory" | "staffDaily";
 
@@ -671,6 +671,7 @@ export default function App() {
   const [salesNotes, setSalesNotes] = useState("");
   const [salesSaveMessage, setSalesSaveMessage] = useState("");
   const [salesSaving, setSalesSaving] = useState(false);
+  const saveOrderInProgress = useRef(false);
   const [salesOrderType, setSalesOrderType] = useState<"One-Time" | "Contract">("One-Time");
   const [salesFrequency, setSalesFrequency] = useState("Weekly");
   const [salesContractStartDate, setSalesContractStartDate] = useState("");
@@ -2241,6 +2242,8 @@ const overdueOrders = useMemo(() => {
   };
 
   const handleSaveOrder = async () => {
+    if (saveOrderInProgress.current) return;
+
     const lineItems = draftOrderLines.filter((l) => l.crop && toNumber(l.quantityNeeded) > 0);
 
     if (!salesCustomer || lineItems.length === 0) {
@@ -2258,6 +2261,7 @@ const overdueOrders = useMemo(() => {
       return;
     }
 
+    saveOrderInProgress.current = true;
     try {
       setSalesSaving(true);
       setSalesSaveMessage("");
@@ -2376,6 +2380,7 @@ const overdueOrders = useMemo(() => {
       setSalesSaveMessage("Error saving sales order.");
     } finally {
       setSalesSaving(false);
+      saveOrderInProgress.current = false;
     }
   };
 
