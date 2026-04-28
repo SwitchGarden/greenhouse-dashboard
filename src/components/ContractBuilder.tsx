@@ -247,7 +247,7 @@ TERMS AND CONDITIONS:
 
 5. MODIFICATIONS: Changes to crop selections require 3 weeks advance notice to allow for grow scheduling.
 
-6. TERMINATION: Either party may terminate this agreement with 30 days written notice. Early termination by Purchaser within the first 90 days may result in a restocking fee equal to 2 weeks of the contracted value.
+6. TERMINATION: Either party may terminate this agreement with 45 days written notice. Early termination by Purchaser within the first 90 days may result in a restocking fee equal to 2 weeks of the contracted value.
 
 7. FORCE MAJEURE: Neither party shall be liable for delays or failures caused by events beyond their reasonable control.
 
