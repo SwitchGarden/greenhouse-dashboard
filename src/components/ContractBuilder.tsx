@@ -233,8 +233,6 @@ WEEKLY PRODUCE SCHEDULE:
 ${cropTable}
 
 Weekly Subtotal: $${totalWeeklyFull.toFixed(2)}${discountPct > 0 ? `\nPartner Discount (${discountPct}%): -$${(totalWeeklyFull - totalWeeklyNet).toFixed(2)}\nWeekly Total After Discount: $${totalWeeklyNet.toFixed(2)}` : `\nWeekly Total: $${totalWeeklyFull.toFixed(2)}`}
-Estimated Monthly Value: $${(totalWeeklyNet * 4.33).toFixed(2)}
-Estimated Contract Value: $${(totalWeeklyNet * 4.33 * termMonths).toFixed(2)}
 
 TERMS AND CONDITIONS:
 
