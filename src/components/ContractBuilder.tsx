@@ -184,6 +184,9 @@ function generateContract(
   termMonths: number,
   signerName: string,
   deliveryDay: string,
+  contractLength: string,
+  contractEndDate: string,
+  paymentTerms: string,
 ): string {
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const D = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
@@ -198,6 +201,21 @@ function generateContract(
   const formattedStart = startDate
     ? new Date(startDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
     : '[Start Date TBD]';
+
+  const formattedEnd = contractLength === 'custom' && contractEndDate
+    ? new Date(contractEndDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : contractLength === '6months' && startDate
+      ? new Date(new Date(startDate + 'T00:00:00').setMonth(new Date(startDate + 'T00:00:00').getMonth() + 6)).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+      : contractLength === '1year' && startDate
+        ? new Date(new Date(startDate + 'T00:00:00').setFullYear(new Date(startDate + 'T00:00:00').getFullYear() + 1)).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+        : '[End Date TBD]';
+
+  const contractLengthLabel = contractLength === '6months' ? '6 months'
+    : contractLength === '1year' ? '1 year'
+    : contractLength === 'custom' ? 'Custom term'
+    : '[Term TBD]';
+
+  const selectedPaymentTerms = paymentTerms || 'Net 15';
 
   const cropLines = crops.map(c => {
     const unitWord = c.unit === 'each' ? 'heads' : 'lbs';
@@ -222,13 +240,13 @@ Switchpoint Garden will grow and reserve produce for ${info.restaurantName} as s
 
 Every purchase supports Switchpoint's mission of providing housing and hope for individuals experiencing homelessness in St. George, Utah.`;
 
-  const section2 = isChef
-    ? `2. CONTRACT TERM
+  const section2 = `2. CONTRACT TERM
 
-This Agreement is month-to-month and continues until cancelled by either party with 45 days written notice as described in Section 10.`
-    : `2. CONTRACT TERM
+Start date:      ${formattedStart}
+End date:        ${formattedEnd}
+Contract length: ${contractLengthLabel}
 
-This Agreement begins on ${formattedStart} and continues for ${termMonths} months, unless cancelled earlier by either party with 45 days written notice as described in Section 10.`;
+This Agreement begins on ${formattedStart} and continues through ${formattedEnd}, unless cancelled earlier by either party with 45 days written notice as described in Section 10.`;
 
   const section3 = isChef && tierInfo
     ? `3. SELECTED TIER & DISCOUNT
@@ -236,7 +254,7 @@ This Agreement begins on ${formattedStart} and continues for ${termMonths} month
 Tier:               ${tierInfo.label}
 Weekly commitment:  ${tierInfo.priceRange}
 Discount:           ${discountPct}% off every invoice
-Contract length:    Month-to-month
+Contract length:    ${contractLengthLabel}
 
 The ${discountPct}% Chef Partner discount is applied automatically to all invoices for the duration of this Agreement. No additional codes or requests are required.`
     : `3. PRICING
@@ -294,14 +312,20 @@ First delivery:  ${formattedStart}
 
 A weekly availability list will be sent to ${info.email} prior to each delivery. ${info.restaurantName} may request adjustments to specific product selections within their reserved weekly value allocation. All adjustment requests must be submitted by end of business the day prior to scheduled delivery.`;
 
+  const paymentNote = selectedPaymentTerms === 'Pre-Pay Weekly'
+    ? 'Invoices are issued prior to each delivery and must be paid before produce is released. Switchpoint Garden reserves the right to withhold delivery until payment is confirmed.'
+    : selectedPaymentTerms === 'Due Upon Receipt'
+      ? 'Invoices are issued upon each delivery and are due immediately upon receipt. Accounts with outstanding balances may result in suspension of the reserved crop allocation.'
+      : `Invoices are issued upon each delivery. Accounts more than 30 days past due may result in suspension of the reserved crop allocation until the outstanding balance is resolved. Switchpoint Garden reserves the right to redirect reserved crops to other buyers if payment is not received within the agreed terms.`;
+
   const section7 = `7. PAYMENT TERMS
 
-Payment terms:     Net 15
+Payment terms:     ${selectedPaymentTerms}
 Invoices sent to:  ${info.email}
 Accepted methods:  ACH / bank transfer
                    Credit card (processing fee may apply)
 
-Invoices are issued upon each delivery. Accounts more than 30 days past due may result in suspension of the reserved crop allocation until the outstanding balance is resolved. Switchpoint Garden reserves the right to redirect reserved crops to other buyers if payment is not received within the agreed terms.`;
+${paymentNote}`;
 
   const section8 = `8. QUALITY GUARANTEE
 
@@ -418,11 +442,14 @@ export default function ContractBuilder() {
   const [startDate, setStartDate] = useState('');
   const [termMonths, setTermMonths] = useState(6);
   const [deliveryDay, setDeliveryDay] = useState('');
+  const [contractLength, setContractLength] = useState('');
+  const [contractEndDate, setContractEndDate] = useState('');
+  const [paymentTerms, setPaymentTerms] = useState('');
   const [signerName, setSignerName] = useState('');
   const [copied, setCopied] = useState(false);
 
   const discountPct = tier && contractType === 'chef-partner' ? TIER_DETAILS[tier as TierName].discount : 0;
-  const contractText = generateContract(info, contractType, tier, crops, startDate, termMonths, signerName, deliveryDay);
+  const contractText = generateContract(info, contractType, tier, crops, startDate, termMonths, signerName, deliveryDay, contractLength, contractEndDate, paymentTerms);
 
   const addCrop = () => setCrops(prev => [...prev, defaultCrop()]);
   const removeCrop = (i: number) => setCrops(prev => prev.filter((_, idx) => idx !== i));
@@ -476,6 +503,9 @@ export default function ContractBuilder() {
     setStartDate('');
     setTermMonths(6);
     setDeliveryDay('');
+    setContractLength('');
+    setContractEndDate('');
+    setPaymentTerms('');
     setSignerName('');
   };
 
@@ -626,7 +656,7 @@ export default function ContractBuilder() {
               </div>
             )}
 
-            <div style={{ marginTop: 24, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div style={{ marginTop: 24, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <label style={labelStyle}>First Delivery Date</label>
                 <input style={inputStyle} type="date" value={startDate}
@@ -642,17 +672,37 @@ export default function ContractBuilder() {
                   ))}
                 </select>
               </div>
-              {contractType !== 'chef-partner' && (
+              <div>
+                <label style={labelStyle}>Contract Length</label>
+                <select style={inputStyle} value={contractLength}
+                  onChange={e => { setContractLength(e.target.value); setContractEndDate(''); }}>
+                  <option value="">Select length</option>
+                  <option value="6months">6 Months</option>
+                  <option value="1year">1 Year</option>
+                  <option value="custom">Custom (pick end date)</option>
+                </select>
+              </div>
+              {contractLength === 'custom' ? (
                 <div>
-                  <label style={labelStyle}>Term (months)</label>
-                  <select style={inputStyle} value={termMonths}
-                    onChange={e => setTermMonths(Number(e.target.value))}>
-                    {[3, 6, 9, 12, 18, 24].map(m => (
-                      <option key={m} value={m}>{m} months</option>
-                    ))}
-                  </select>
+                  <label style={labelStyle}>Contract End Date</label>
+                  <input style={inputStyle} type="date" value={contractEndDate}
+                    onChange={e => setContractEndDate(e.target.value)} />
                 </div>
-              )}
+              ) : <div />}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={labelStyle}>Payment Terms</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+                  {['Net 15', 'Net 30', 'Due Upon Receipt', 'Pre-Pay Weekly'].map(pt => (
+                    <div key={pt} onClick={() => setPaymentTerms(pt)} style={{
+                      border: `2px solid ${paymentTerms === pt ? '#16a34a' : '#e5e7eb'}`,
+                      borderRadius: 8, padding: '10px 12px', cursor: 'pointer',
+                      background: paymentTerms === pt ? '#f0fdf4' : '#fff',
+                      textAlign: 'center', fontSize: 13, fontWeight: paymentTerms === pt ? 700 : 400,
+                      color: paymentTerms === pt ? '#166534' : '#374151',
+                    }}>{pt}</div>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between' }}>
