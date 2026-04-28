@@ -257,7 +257,7 @@ SIGNATURES:
 
 Switchpoint Garden                    ${info.restaurantName}
 _____________________________         _____________________________
-${signerName || 'Authorized Signature'}                  ${info.contactName}
+${signerName || ''}
 
 _____________________________         _____________________________
 Title                                 Title
