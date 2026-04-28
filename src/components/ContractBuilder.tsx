@@ -182,6 +182,7 @@ function generateContract(
   crops: CropSelection[],
   startDate: string,
   termMonths: number,
+  signerName: string,
 ): string {
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const discountPct = tier && contractType === 'chef-partner' ? TIER_DETAILS[tier].discount : 0;
@@ -256,10 +257,10 @@ SIGNATURES:
 
 Switchpoint Garden                    ${info.restaurantName}
 _____________________________         _____________________________
-Authorized Signature                  ${info.contactName}
+${signerName || 'Authorized Signature'}                  ${info.contactName}
 
 _____________________________         _____________________________
-Printed Name / Title                  Title
+Title                                 Title
 
 _____________________________         _____________________________
 Date                                  Date
@@ -284,10 +285,11 @@ export default function ContractBuilder() {
   const [crops, setCrops] = useState<CropSelection[]>([defaultCrop()]);
   const [startDate, setStartDate] = useState('');
   const [termMonths, setTermMonths] = useState(6);
+  const [signerName, setSignerName] = useState('');
   const [copied, setCopied] = useState(false);
 
   const discountPct = tier && contractType === 'chef-partner' ? TIER_DETAILS[tier].discount : 0;
-  const contractText = generateContract(info, contractType, tier, crops, startDate, termMonths);
+  const contractText = generateContract(info, contractType, tier, crops, startDate, termMonths, signerName);
 
   const addCrop = () => setCrops(prev => [...prev, defaultCrop()]);
   const removeCrop = (i: number) => setCrops(prev => prev.filter((_, idx) => idx !== i));
@@ -318,7 +320,7 @@ export default function ContractBuilder() {
       <style>
         body { font-family: 'Courier New', monospace; font-size: 12px; padding: 40px; max-width: 700px; margin: 0 auto; }
         .header { text-align: center; margin-bottom: 24px; }
-        img { height: 60px; }
+        img { height: 120px; }
         pre { white-space: pre-wrap; word-wrap: break-word; }
       </style></head><body>
       <div class="header">
@@ -340,6 +342,7 @@ export default function ContractBuilder() {
     setCrops([defaultCrop()]);
     setStartDate('');
     setTermMonths(6);
+    setSignerName('');
   };
 
   // Group crops by category for the select dropdown
@@ -349,7 +352,7 @@ export default function ContractBuilder() {
     <div style={containerStyle}>
       <div style={cardStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-          <img src="/gardennobkgd.png" alt="Switchpoint Garden" style={{ height: 48 }} />
+          <img src="/gardennobkgd.png" alt="Switchpoint Garden" style={{ height: 96 }} />
           <div>
             <div style={headingStyle}>Contract Builder</div>
             <div style={subheadStyle}>Generate produce supply agreements for restaurant partners</div>
@@ -361,6 +364,11 @@ export default function ContractBuilder() {
         {step === 0 && (
           <div>
             <h3 style={{ marginTop: 0, color: '#166534' }}>Restaurant Information</h3>
+            <div style={{ marginBottom: 16, padding: '12px 16px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+              <label style={labelStyle}>Switchpoint Authorized Signer Name</label>
+              <input style={inputStyle} placeholder="Your name (appears on the contract signature line)"
+                value={signerName} onChange={e => setSignerName(e.target.value)} />
+            </div>
             <div style={gridStyle}>
               <div>
                 <label style={labelStyle}>Restaurant Name *</label>
@@ -619,7 +627,7 @@ export default function ContractBuilder() {
             </div>
 
             <div style={{ textAlign: 'center', marginBottom: 16 }}>
-              <img src="/gardennobkgd.png" alt="Switchpoint Garden" style={{ height: 56 }} />
+              <img src="/gardennobkgd.png" alt="Switchpoint Garden" style={{ height: 112 }} />
             </div>
 
             <div style={{
