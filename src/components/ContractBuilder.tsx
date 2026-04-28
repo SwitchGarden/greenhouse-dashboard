@@ -183,35 +183,152 @@ function generateContract(
   startDate: string,
   termMonths: number,
   signerName: string,
+  deliveryDay: string,
 ): string {
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const discountPct = tier && contractType === 'chef-partner' ? TIER_DETAILS[tier].discount : 0;
+  const D = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+  const isChef = contractType === 'chef-partner';
+  const discountPct = tier && isChef ? TIER_DETAILS[tier as TierName].discount : 0;
+  const tierInfo = tier ? TIER_DETAILS[tier as TierName] : null;
 
-  const totalWeeklyFull = crops.reduce((s, c) => s + c.weeklyQty * c.pricePerUnit, 0);
-  const totalWeeklyNet = totalWeeklyFull * (1 - discountPct / 100);
+  const totalFull = crops.reduce((s, c) => s + c.weeklyQty * c.pricePerUnit, 0);
+  const totalNet = totalFull * (1 - discountPct / 100);
+  const discountAmt = totalFull - totalNet;
 
-  const cropTable = crops.map(c => {
-    const full = c.weeklyQty * c.pricePerUnit;
-    const net = full * (1 - discountPct / 100);
-    const unitLabel = c.unit === 'each' ? `${c.weeklyQty} ea` : `${c.weeklyQty} lb`;
-    const priceLabel = c.unit === 'each' ? `$${c.pricePerUnit.toFixed(2)}/ea` : `$${c.pricePerUnit.toFixed(2)}/lb`;
-    if (discountPct > 0) {
-      return `  • ${c.crop}: ${unitLabel} @ ${priceLabel} = $${full.toFixed(2)} → $${net.toFixed(2)} after ${discountPct}% discount`;
-    }
-    return `  • ${c.crop}: ${unitLabel} @ ${priceLabel} = $${full.toFixed(2)}/week`;
+  const formattedStart = startDate
+    ? new Date(startDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : '[Start Date TBD]';
+
+  const cropLines = crops.map(c => {
+    const unitWord = c.unit === 'each' ? 'heads' : 'lbs';
+    return `    • ${c.crop}: ${c.weeklyQty} ${unitWord}/week  @  $${c.pricePerUnit.toFixed(2)}/${c.unit}`;
   }).join('\n');
 
-  const tierSection = contractType === 'chef-partner' && tier ? `
-PARTNERSHIP TIER: ${TIER_DETAILS[tier].label.toUpperCase()} (${TIER_DETAILS[tier].priceRange})
-Partner Benefits: ${TIER_DETAILS[tier].perks}
-Volume Discount: ${discountPct}%
-` : '';
+  const section1 = isChef
+    ? `1. PROGRAM OVERVIEW
+
+This Chef Partner Program Agreement ("Agreement") is entered into between Switchpoint Garden and ${info.restaurantName}. By executing this Agreement, ${info.restaurantName} commits to a guaranteed weekly purchase and authorizes Switchpoint Garden to plant, grow, and reserve the crops specified in Section 4 on their behalf each week.
+
+Switchpoint Garden will begin allocating greenhouse space and growing resources specifically for ${info.restaurantName} upon execution of this Agreement. Because crops are actively planted and grown to fulfill this commitment, ${info.restaurantName} understands and agrees that the weekly amounts specified herein represent a financial obligation for the duration of this Agreement — not a discretionary order that may be declined week to week.
+
+In return, ${info.restaurantName} receives guaranteed priority harvest access, a reserved weekly allocation, and a standing ${discountPct}% discount on every invoice.
+
+Every purchase supports Switchpoint's mission of providing housing and hope for individuals experiencing homelessness in St. George, Utah.`
+    : `1. AGREEMENT OVERVIEW
+
+This Wholesale Supply Agreement ("Agreement") is entered into between Switchpoint Garden and ${info.restaurantName}. By executing this Agreement, ${info.restaurantName} commits to a regular weekly purchase of fresh produce grown and harvested by Switchpoint Garden.
+
+Switchpoint Garden will grow and reserve produce for ${info.restaurantName} as specified in Section 4. ${info.restaurantName} agrees to receive and pay for the committed weekly quantities for the full term of this Agreement.
+
+Every purchase supports Switchpoint's mission of providing housing and hope for individuals experiencing homelessness in St. George, Utah.`;
+
+  const section2 = isChef
+    ? `2. CONTRACT TERM
+
+This Agreement is month-to-month and continues until cancelled by either party with 45 days written notice as described in Section 10.`
+    : `2. CONTRACT TERM
+
+This Agreement begins on ${formattedStart} and continues for ${termMonths} months, unless cancelled earlier by either party with 45 days written notice as described in Section 10.`;
+
+  const section3 = isChef && tierInfo
+    ? `3. SELECTED TIER & DISCOUNT
+
+Tier:               ${tierInfo.label}
+Weekly commitment:  ${tierInfo.priceRange}
+Discount:           ${discountPct}% off every invoice
+Contract length:    Month-to-month
+
+The ${discountPct}% Chef Partner discount is applied automatically to all invoices for the duration of this Agreement. No additional codes or requests are required.`
+    : `3. PRICING
+
+All produce is priced at the wholesale rates listed in Section 5. Invoices reflect confirmed delivery quantities. Pricing is subject to change with 30 days written notice.`;
+
+  const cropSummary = discountPct > 0
+    ? `Weekly subtotal (before discount):   $${totalFull.toFixed(2)}
+${discountPct}% Chef Partner discount:             -$${discountAmt.toFixed(2)}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Weekly amount owed by ${info.restaurantName}:   $${totalNet.toFixed(2)}
+
+${info.restaurantName} agrees to pay $${totalNet.toFixed(2)} per week (after the ${discountPct}% Chef Partner discount) for crops grown and reserved on their behalf. Final invoice amounts reflect confirmed delivery quantities and may vary slightly based on harvest weight. Any adjustments will be communicated prior to delivery.`
+    : `Weekly total:   $${totalFull.toFixed(2)}
+
+Final invoice amounts reflect confirmed delivery quantities and may vary slightly based on harvest weight. Any adjustments will be communicated prior to delivery.`;
+
+  const section4 = isChef
+    ? `4. COMMITTED WEEKLY CROP ORDER
+
+The following crops and quantities represent ${info.restaurantName}'s binding weekly commitment. Switchpoint Garden will plant and grow these crops specifically for ${info.restaurantName} each week. By signing this Agreement, ${info.restaurantName} agrees to receive and pay for these quantities — or their agreed equivalent value — each week for the full term of this Agreement.
+
+${cropLines}
+
+${cropSummary}`
+    : `4. WEEKLY CROP ORDER
+
+The following crops and quantities represent ${info.restaurantName}'s agreed weekly order. Switchpoint Garden will grow and reserve these crops each week.
+
+${cropLines}
+
+${cropSummary}`;
+
+  const section5 = `5. PRODUCT PRICING (WHOLESALE RATE BEFORE DISCOUNT)
+
+Head Lettuces & Specialty Heads
+  Romaine $3.00/head  ·  Butterhead $3.25/head  ·  Muir Lettuce $3.25/head
+  Oakleaf Lettuce $3.25/head  ·  Swiss Chard $3.00/head
+  Bok Choy $2.75/head  ·  Fennel $3.00/head
+
+Fresh Mixes & Baby Greens
+  Salad Mix $6.50/lb  ·  Harvest Mix $6.50/lb  ·  Sunset Mix $7.00/lb
+  Arugula $7.00/lb  ·  Kale $6.00/lb
+
+Fresh Herbs
+  Basil $12.00/lb  ·  Thai Basil $12.00/lb  ·  Cilantro $10.00/lb
+  Parsley $10.00/lb  ·  Chives $14.00/lb  ·  Mint $12.00/lb
+
+Prices are subject to change with 30 days written notice.${isChef ? ' The Chef Partner discount applies to all invoice totals and is reflected on each invoice issued.' : ''}`;
+
+  const section6 = `6. DELIVERY SCHEDULE
+
+Delivery day:    ${deliveryDay || '[Delivery Day]'}
+First delivery:  ${formattedStart}
+
+A weekly availability list will be sent to ${info.email} prior to each delivery. ${info.restaurantName} may request adjustments to specific product selections within their reserved weekly value allocation. All adjustment requests must be submitted by end of business the day prior to scheduled delivery.`;
+
+  const section7 = `7. PAYMENT TERMS
+
+Payment terms:     Net 15
+Invoices sent to:  ${info.email}
+Accepted methods:  ACH / bank transfer
+                   Credit card (processing fee may apply)
+
+Invoices are issued upon each delivery. Accounts more than 30 days past due may result in suspension of the reserved crop allocation until the outstanding balance is resolved. Switchpoint Garden reserves the right to redirect reserved crops to other buyers if payment is not received within the agreed terms.`;
+
+  const section8 = `8. QUALITY GUARANTEE
+
+All produce is harvested fresh within 24 hours of delivery and grown aeroponically without pesticides. If any product does not meet reasonable quality standards upon delivery, ${info.restaurantName} must notify Switchpoint Garden within 24 hours of delivery to request a replacement or invoice credit.`;
+
+  const section9 = `9. CROP INTERRUPTION
+
+In the event of crop failure, equipment malfunction, or circumstances beyond Switchpoint Garden's reasonable control that prevent fulfillment of the weekly allocation, Switchpoint Garden will notify ${info.restaurantName} within 24 hours and provide a substitute product of equal or greater value, or issue a prorated credit on the following invoice. A crop interruption event does not constitute grounds for early termination of this Agreement without the required notice.`;
+
+  const section10 = `10. CANCELLATION POLICY
+
+Either party may cancel this Agreement by providing 45 days written notice delivered via email to the other party.
+
+Switchpoint Garden operates on a 42-day grow cycle. Crops committed under this Agreement are actively being planted and cultivated at the time any cancellation notice is received. The 45-day notice requirement exists to allow Switchpoint Garden to responsibly manage its growing commitments, minimize crop waste, and protect the resources dedicated to this account.
+
+During the full 45-day notice period, ${info.restaurantName} remains financially responsible for all weekly amounts as outlined in Section 4 of this Agreement. Crops already planted or in process at the time notice is received that fall within the notice period will be harvested, delivered, and invoiced per the terms herein.`;
+
+  const section11 = `11. SIGNATURES
+
+By signing below, both parties agree to all terms of this ${isChef ? 'Chef Partner Program Agreement' : 'Wholesale Supply Agreement'}. ${info.restaurantName} acknowledges that this Agreement represents a commitment to receive and pay for crops that Switchpoint Garden will actively grow on their behalf, and that the financial obligations and cancellation terms herein reflect the nature of that growing commitment.`;
+
+  const addressLine = [info.address, info.city, info.state, info.zip].filter(Boolean).join(', ');
 
   return `SWITCHPOINT GARDEN
-PRODUCE SUPPLY AGREEMENT
+${isChef ? 'CHEF PARTNER PROGRAM AGREEMENT' : 'WHOLESALE SUPPLY AGREEMENT'}
 
 Date: ${today}
-Contract Type: ${contractType === 'chef-partner' ? 'Chef Partner Program' : 'Traditional Wholesale'}
 
 SUPPLIER:
 Switchpoint Garden
@@ -221,39 +338,54 @@ contact@switchpointcares.org
 PURCHASER:
 ${info.restaurantName}
 ${info.contactName}
-${info.address}
-${info.city}, ${info.state} ${info.zip}
-${info.email} | ${info.phone}
-${tierSection}
-TERM:
-Start Date: ${startDate || 'TBD'}
-Duration: ${termMonths} months
-${startDate ? `End Date: ${new Date(new Date(startDate).setMonth(new Date(startDate).getMonth() + termMonths)).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}` : ''}
+${addressLine}
+${info.email}${info.phone ? ` | ${info.phone}` : ''}
 
-WEEKLY PRODUCE SCHEDULE:
-${cropTable}
+${D}
 
-Weekly Subtotal: $${totalWeeklyFull.toFixed(2)}${discountPct > 0 ? `\nPartner Discount (${discountPct}%): -$${(totalWeeklyFull - totalWeeklyNet).toFixed(2)}\nWeekly Total After Discount: $${totalWeeklyNet.toFixed(2)}` : `\nWeekly Total: $${totalWeeklyFull.toFixed(2)}`}
+${section1}
 
-TERMS AND CONDITIONS:
+${D}
 
-1. DELIVERY: Switchpoint Garden will provide agreed produce on the scheduled harvest days. Delivery schedule to be confirmed weekly by Thursday for the following week.
+${section2}
 
-2. QUALITY: All produce is grown using sustainable, hydroponic methods. Produce not meeting quality standards will be replaced or credited.
+${D}
 
-3. PAYMENT: Invoices issued weekly. Payment due within 15 days of invoice. A 1.5% monthly late fee applies to overdue balances.
+${section3}
 
-4. MINIMUM ORDER: Purchaser agrees to maintain the weekly volumes listed above. Reductions of more than 20% require 2 weeks written notice.
+${D}
 
-5. MODIFICATIONS: Changes to crop selections require 3 weeks advance notice to allow for grow scheduling.
+${section4}
 
-6. TERMINATION: Either party may terminate this agreement with 45 days written notice. Early termination by Purchaser within the first 90 days may result in a restocking fee equal to 2 weeks of the contracted value.
+${D}
 
-7. FORCE MAJEURE: Neither party shall be liable for delays or failures caused by events beyond their reasonable control.
+${section5}
 
-8. GOVERNING LAW: This agreement shall be governed by the laws of the State of Utah.
+${D}
 
-SIGNATURES:
+${section6}
+
+${D}
+
+${section7}
+
+${D}
+
+${section8}
+
+${D}
+
+${section9}
+
+${D}
+
+${section10}
+
+${D}
+
+${section11}
+
+${D}
 
 Switchpoint Garden                    ${info.restaurantName}
 _____________________________         _____________________________
@@ -285,11 +417,12 @@ export default function ContractBuilder() {
   const [crops, setCrops] = useState<CropSelection[]>([defaultCrop()]);
   const [startDate, setStartDate] = useState('');
   const [termMonths, setTermMonths] = useState(6);
+  const [deliveryDay, setDeliveryDay] = useState('');
   const [signerName, setSignerName] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const discountPct = tier && contractType === 'chef-partner' ? TIER_DETAILS[tier].discount : 0;
-  const contractText = generateContract(info, contractType, tier, crops, startDate, termMonths, signerName);
+  const discountPct = tier && contractType === 'chef-partner' ? TIER_DETAILS[tier as TierName].discount : 0;
+  const contractText = generateContract(info, contractType, tier, crops, startDate, termMonths, signerName, deliveryDay);
 
   const addCrop = () => setCrops(prev => [...prev, defaultCrop()]);
   const removeCrop = (i: number) => setCrops(prev => prev.filter((_, idx) => idx !== i));
@@ -342,6 +475,7 @@ export default function ContractBuilder() {
     setCrops([defaultCrop()]);
     setStartDate('');
     setTermMonths(6);
+    setDeliveryDay('');
     setSignerName('');
   };
 
@@ -492,21 +626,33 @@ export default function ContractBuilder() {
               </div>
             )}
 
-            <div style={{ marginTop: 24, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ marginTop: 24, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
               <div>
-                <label style={labelStyle}>Contract Start Date</label>
+                <label style={labelStyle}>First Delivery Date</label>
                 <input style={inputStyle} type="date" value={startDate}
                   onChange={e => setStartDate(e.target.value)} />
               </div>
               <div>
-                <label style={labelStyle}>Term (months)</label>
-                <select style={inputStyle} value={termMonths}
-                  onChange={e => setTermMonths(Number(e.target.value))}>
-                  {[3, 6, 9, 12, 18, 24].map(m => (
-                    <option key={m} value={m}>{m} months</option>
+                <label style={labelStyle}>Weekly Delivery Day</label>
+                <select style={inputStyle} value={deliveryDay}
+                  onChange={e => setDeliveryDay(e.target.value)}>
+                  <option value="">Select day</option>
+                  {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d => (
+                    <option key={d} value={`Every ${d}`}>{d}</option>
                   ))}
                 </select>
               </div>
+              {contractType !== 'chef-partner' && (
+                <div>
+                  <label style={labelStyle}>Term (months)</label>
+                  <select style={inputStyle} value={termMonths}
+                    onChange={e => setTermMonths(Number(e.target.value))}>
+                    {[3, 6, 9, 12, 18, 24].map(m => (
+                      <option key={m} value={m}>{m} months</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between' }}>
