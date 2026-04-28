@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import ContractBuilder from "./ContractBuilder";
 
-type PageKey = "dashboard" | "inventory" | "staffDaily";
+type PageKey = "dashboard" | "inventory" | "staffDaily" | "contracts";
 
 type StaffActionRow = {
   rowNumber: number;
@@ -3627,6 +3628,9 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             <button onClick={() => setActivePage("inventory")} style={activePage === "inventory" ? navButtonActiveStyle : navButtonStyle}>
               Production Inventory
             </button>
+            <button onClick={() => setActivePage("contracts")} style={activePage === "contracts" ? navButtonActiveStyle : navButtonStyle}>
+              Contracts
+            </button>
           </div>
 
           <button onClick={loadAllData} style={secondaryButtonStyle}>
@@ -5547,6 +5551,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           </div>
         </div>
       )}
+
+        {activePage === "contracts" && <ContractBuilder />}
     </div>
   );
 }
