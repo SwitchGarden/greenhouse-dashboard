@@ -357,7 +357,6 @@ Date: ${today}
 SUPPLIER:
 Switchpoint Garden
 255 N 400 W, St. George, UT 84770
-contact@switchpointcares.org
 
 PURCHASER:
 ${info.restaurantName}
