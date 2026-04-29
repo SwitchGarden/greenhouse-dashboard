@@ -1,7 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ContractBuilder from "./ContractBuilder";
 
-type PageKey = "dashboard" | "inventory" | "staffDaily" | "contracts";
+type PageKey = "dashboard" | "inventory" | "staffDaily" | "contracts" | "staffBoard";
+
+type StaffNote = {
+  rowNumber: number;
+  Timestamp?: string;
+  Category?: string;
+  Description?: string;
+  "Assigned To"?: string;
+  "Due Date"?: string;
+  Status?: string;
+};
+
+type MaintenanceLog = {
+  rowNumber: number;
+  Timestamp?: string;
+  Date?: string;
+  Note?: string;
+};
 
 type StaffActionRow = {
   rowNumber: number;
@@ -640,6 +657,26 @@ export default function App() {
   const [staffRows, setStaffRows] = useState<StaffActionRow[]>([]);
   const [salesOrders, setSalesOrders] = useState<SalesOrderRow[]>([]);
   const [productionInventory, setProductionInventory] = useState<ProductionInventoryRow[]>([]);
+  const [staffNotes, setStaffNotes] = useState<StaffNote[]>([]);
+  const [maintenanceLogs, setMaintenanceLogs] = useState<MaintenanceLog[]>([]);
+
+  // Staff Board form state
+  const [noteCategory, setNoteCategory] = useState<"Equipment" | "Purchase">("Equipment");
+  const [noteDescription, setNoteDescription] = useState("");
+  const [noteAssignedTo, setNoteAssignedTo] = useState("");
+  const [noteDueDate, setNoteDueDate] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteMessage, setNoteMessage] = useState("");
+  const [editingNoteRow, setEditingNoteRow] = useState<number | null>(null);
+  const [editNoteStatus, setEditNoteStatus] = useState("");
+  const [editNoteAssignedTo, setEditNoteAssignedTo] = useState("");
+  const [editNoteSaving, setEditNoteSaving] = useState(false);
+
+  // Maintenance log form state
+  const [maintDate, setMaintDate] = useState(formatDateInput(new Date()));
+  const [maintNote, setMaintNote] = useState("");
+  const [maintSaving, setMaintSaving] = useState(false);
+  const [maintMessage, setMaintMessage] = useState("");
 
   const [message, setMessage] = useState("");
 
@@ -902,10 +939,20 @@ export default function App() {
     } catch { /* backend may not support this yet — localStorage already loaded */ }
   };
 
+  const loadStaffNotes = async () => {
+    const result = await postToBackend({ action: "loadStaffNotes" });
+    if (result.ok) setStaffNotes(Array.isArray(result.rows) ? result.rows : []);
+  };
+
+  const loadMaintenanceLogs = async () => {
+    const result = await postToBackend({ action: "loadMaintenanceLogs" });
+    if (result.ok) setMaintenanceLogs(Array.isArray(result.rows) ? result.rows : []);
+  };
+
   const loadAllData = async () => {
     try {
       setLoadingData(true);
-      await Promise.all([loadStaffActions(), loadSalesOrders(), loadProductionInventory(), loadMarketConfig()]);
+      await Promise.all([loadStaffActions(), loadSalesOrders(), loadProductionInventory(), loadMarketConfig(), loadStaffNotes(), loadMaintenanceLogs()]);
     } catch (error) {
       console.error("loadAllData error:", error);
     } finally {
@@ -3659,6 +3706,9 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             <button onClick={() => setActivePage("contracts")} style={activePage === "contracts" ? navButtonActiveStyle : navButtonStyle}>
               Contracts
             </button>
+            <button onClick={() => setActivePage("staffBoard")} style={activePage === "staffBoard" ? navButtonActiveStyle : navButtonStyle}>
+              Staff Board
+            </button>
           </div>
 
           <button onClick={loadAllData} style={secondaryButtonStyle}>
@@ -5605,6 +5655,242 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       )}
 
         {activePage === "contracts" && <ContractBuilder />}
+
+        {activePage === "staffBoard" && (() => {
+          const today = formatDateInput(new Date());
+
+          const getDotColor = (dueDate: string | undefined, status: string | undefined) => {
+            const norm = (status || "").toLowerCase();
+            if (norm === "completed" || norm === "purchased") return "#9ca3af";
+            if (!dueDate) return "#9ca3af";
+            const due = dueDate.toString().slice(0, 10);
+            if (due >= today) return "#16a34a";
+            const daysOver = Math.floor((new Date(today).getTime() - new Date(due).getTime()) / 86400000);
+            return daysOver >= 5 ? "#dc2626" : "#d97706";
+          };
+
+          const notesByCategory = (cat: string) =>
+            staffNotes.filter(n => (n.Category || "") === cat)
+              .sort((a, b) => {
+                const da = (a["Due Date"] || "").toString().slice(0, 10);
+                const db = (b["Due Date"] || "").toString().slice(0, 10);
+                return da.localeCompare(db);
+              });
+
+          const handleSaveNote = async () => {
+            if (!noteDescription.trim()) { setNoteMessage("Description is required."); return; }
+            setNoteSaving(true); setNoteMessage("");
+            const result = await postToBackend({
+              action: "saveStaffNote",
+              category: noteCategory,
+              description: noteDescription.trim(),
+              assignedTo: noteAssignedTo.trim(),
+              dueDate: noteDueDate,
+              status: "In Progress",
+            });
+            if (result.ok) {
+              setNoteDescription(""); setNoteAssignedTo(""); setNoteDueDate("");
+              setNoteMessage("Saved.");
+              await loadStaffNotes();
+            } else {
+              setNoteMessage("Error: " + result.message);
+            }
+            setNoteSaving(false);
+          };
+
+          const handleUpdateNote = async (rowNumber: number) => {
+            setEditNoteSaving(true);
+            await postToBackend({ action: "updateStaffNote", rowNumber, status: editNoteStatus, assignedTo: editNoteAssignedTo });
+            setEditingNoteRow(null);
+            await loadStaffNotes();
+            setEditNoteSaving(false);
+          };
+
+          const handleDeleteNote = async (rowNumber: number) => {
+            if (!window.confirm("Delete this item?")) return;
+            await postToBackend({ action: "deleteStaffNote", rowNumber });
+            await loadStaffNotes();
+          };
+
+          const handleSaveMaint = async () => {
+            if (!maintNote.trim()) { setMaintMessage("Note is required."); return; }
+            setMaintSaving(true); setMaintMessage("");
+            const result = await postToBackend({ action: "saveMaintenanceLog", date: maintDate, note: maintNote.trim() });
+            if (result.ok) {
+              setMaintNote(""); setMaintMessage("Saved.");
+              await loadMaintenanceLogs();
+            } else {
+              setMaintMessage("Error: " + result.message);
+            }
+            setMaintSaving(false);
+          };
+
+          const handleDeleteMaint = async (rowNumber: number) => {
+            if (!window.confirm("Delete this log entry?")) return;
+            await postToBackend({ action: "deleteMaintenanceLog", rowNumber });
+            await loadMaintenanceLogs();
+          };
+
+          const NoteTable = ({ category }: { category: string }) => {
+            const items = notesByCategory(category);
+            const statusOptions = category === "Purchase"
+              ? ["In Progress", "Purchased", "Completed"]
+              : ["In Progress", "Completed"];
+            return (
+              <Panel title={category === "Equipment" ? "Equipment Needs" : "Purchase Needs"}>
+                <div style={{ marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr auto auto auto", gap: 8, alignItems: "end" }}>
+                  <Field label="Description">
+                    <input style={inputStyle} value={noteCategory === category ? noteDescription : ""}
+                      onFocus={() => setNoteCategory(category as "Equipment" | "Purchase")}
+                      onChange={e => { setNoteCategory(category as "Equipment" | "Purchase"); setNoteDescription(e.target.value); }}
+                      placeholder="Describe the need..." />
+                  </Field>
+                  <Field label="Assign To">
+                    <input style={inputStyle} value={noteCategory === category ? noteAssignedTo : ""}
+                      onFocus={() => setNoteCategory(category as "Equipment" | "Purchase")}
+                      onChange={e => { setNoteCategory(category as "Equipment" | "Purchase"); setNoteAssignedTo(e.target.value); }}
+                      placeholder="Staff name (optional)" />
+                  </Field>
+                  <Field label="Due Date">
+                    <input style={inputStyle} type="date" value={noteCategory === category ? noteDueDate : ""}
+                      onFocus={() => setNoteCategory(category as "Equipment" | "Purchase")}
+                      onChange={e => { setNoteCategory(category as "Equipment" | "Purchase"); setNoteDueDate(e.target.value); }} />
+                  </Field>
+                  <div style={{ paddingBottom: 0 }}>
+                    <button style={primaryButtonStyle} disabled={noteSaving || noteCategory !== category} onClick={handleSaveNote}>
+                      {noteSaving && noteCategory === category ? "Saving…" : "Add"}
+                    </button>
+                  </div>
+                </div>
+                {noteCategory === category && noteMessage && (
+                  <div style={{ fontSize: 13, color: "#166534", marginBottom: 8 }}>{noteMessage}</div>
+                )}
+                {items.length === 0 ? (
+                  <div style={{ fontSize: 13, color: "#6b7280", padding: "12px 0" }}>No items yet.</div>
+                ) : (
+                  <TableScroll>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}></th>
+                          <th style={thStyle}>Description</th>
+                          <th style={thStyle}>Assigned To</th>
+                          <th style={thStyle}>Due Date</th>
+                          <th style={thStyle}>Status</th>
+                          <th style={thStyle}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map(item => {
+                          const dueStr = (item["Due Date"] || "").toString().slice(0, 10);
+                          const dot = getDotColor(dueStr, item.Status);
+                          const isEditing = editingNoteRow === item.rowNumber;
+                          return (
+                            <tr key={item.rowNumber} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                              <td style={tdStyle}>
+                                <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: dot }} />
+                              </td>
+                              <td style={tdStyle}>{item.Description}</td>
+                              <td style={tdStyle}>{item["Assigned To"] || "—"}</td>
+                              <td style={tdStyle}>{dueStr ? formatDateDisplay(dueStr) : "—"}</td>
+                              <td style={tdStyle}>
+                                {isEditing ? (
+                                  <select style={{ ...inputStyle, width: "auto" }} value={editNoteStatus}
+                                    onChange={e => setEditNoteStatus(e.target.value)}>
+                                    {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                ) : (
+                                  <span style={{ fontSize: 13, color: item.Status === "Completed" || item.Status === "Purchased" ? "#6b7280" : "#1f2937" }}>
+                                    {item.Status || "In Progress"}
+                                  </span>
+                                )}
+                              </td>
+                              <td style={tdStyle}>
+                                {isEditing ? (
+                                  <div style={{ display: "flex", gap: 6 }}>
+                                    <button style={primaryButtonStyle} disabled={editNoteSaving} onClick={() => handleUpdateNote(item.rowNumber)}>
+                                      {editNoteSaving ? "…" : "Save"}
+                                    </button>
+                                    <button style={secondaryButtonStyle} onClick={() => setEditingNoteRow(null)}>Cancel</button>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: "flex", gap: 6 }}>
+                                    <button style={secondaryButtonStyle} onClick={() => {
+                                      setEditingNoteRow(item.rowNumber);
+                                      setEditNoteStatus(item.Status || "In Progress");
+                                      setEditNoteAssignedTo(item["Assigned To"] || "");
+                                    }}>Edit</button>
+                                    <button style={{ ...secondaryButtonStyle, color: "#dc2626", borderColor: "#fca5a5" }}
+                                      onClick={() => handleDeleteNote(item.rowNumber)}>Delete</button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </TableScroll>
+                )}
+              </Panel>
+            );
+          };
+
+          const sortedLogs = [...maintenanceLogs].sort((a, b) =>
+            (b.Date || "").toString().localeCompare((a.Date || "").toString())
+          );
+
+          return (
+            <div style={sectionStackStyle}>
+              <NoteTable category="Equipment" />
+              <NoteTable category="Purchase" />
+              <Panel title="Plant Maintenance Log">
+                <div style={{ marginBottom: 16, display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "end" }}>
+                  <Field label="Date">
+                    <input style={inputStyle} type="date" value={maintDate} onChange={e => setMaintDate(e.target.value)} />
+                  </Field>
+                  <Field label="Note (treatment, chemical, area treated, etc.)">
+                    <input style={inputStyle} value={maintNote} onChange={e => setMaintNote(e.target.value)}
+                      placeholder="e.g. Sprayed towers 1-4 for aphids with neem oil" />
+                  </Field>
+                  <div>
+                    <button style={primaryButtonStyle} disabled={maintSaving} onClick={handleSaveMaint}>
+                      {maintSaving ? "Saving…" : "Log"}
+                    </button>
+                  </div>
+                </div>
+                {maintMessage && <div style={{ fontSize: 13, color: "#166534", marginBottom: 8 }}>{maintMessage}</div>}
+                {sortedLogs.length === 0 ? (
+                  <div style={{ fontSize: 13, color: "#6b7280", padding: "12px 0" }}>No maintenance entries yet.</div>
+                ) : (
+                  <TableScroll>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>Date</th>
+                          <th style={thStyle}>Note</th>
+                          <th style={thStyle}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedLogs.map(log => (
+                          <tr key={log.rowNumber} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                            <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>{formatDateDisplay((log.Date || "").toString().slice(0, 10))}</td>
+                            <td style={tdStyle}>{log.Note}</td>
+                            <td style={tdStyle}>
+                              <button style={{ ...secondaryButtonStyle, color: "#dc2626", borderColor: "#fca5a5" }}
+                                onClick={() => handleDeleteMaint(log.rowNumber)}>Delete</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </TableScroll>
+                )}
+              </Panel>
+            </div>
+          );
+        })()}
     </div>
   );
 }
