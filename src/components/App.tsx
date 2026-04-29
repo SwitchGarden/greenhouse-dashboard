@@ -770,6 +770,7 @@ export default function App() {
   // Staff Daily action helpers
   const [dailyMessage, setDailyMessage] = useState("");
   const [plantingTrayType, setPlantingTrayType] = useState<Record<string, "Full Tray" | "Half Tray">>({});
+  const [plantingTrayCount, setPlantingTrayCount] = useState<Record<string, string>>({});
   const [plantedDates, setPlantedDates] = useState<Record<string, string>>({});
   const [activeHarvestRowNumber, setActiveHarvestRowNumber] = useState("");
   const [harvestActionType, setHarvestActionType] = useState<"Full Harvest" | "Trim Harvest">("Full Harvest");
@@ -2800,10 +2801,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       const maxPods = HALF_TRAY_SEEDS; // each tower slot = 44 pods (Low Density)
       const expectedLbs = calculateExpectedLbs(task.crop, maxPods, "Low Density");
 
-      // Determine how many inventory rows to create — always one per tower needed
-      const fullTrays = trayType === "Full Tray" ? Math.ceil(task.totalTowers / 2) : 0;
-      const halfTrays = trayType === "Full Tray" ? 0 : task.totalTowers;
-      const towersToCreate = task.totalTowers;
+      // Use override count if set, otherwise derive from totalTowers
+      const suggestedTrays = trayType === "Full Tray" ? Math.ceil(task.totalTowers / 2) : task.totalTowers;
+      const overrideTrays = plantingTrayCount[task.crop] ? Math.max(1, parseInt(plantingTrayCount[task.crop], 10) || suggestedTrays) : suggestedTrays;
+      const fullTrays = trayType === "Full Tray" ? overrideTrays : 0;
+      const halfTrays = trayType === "Full Tray" ? 0 : overrideTrays;
+      const towersToCreate = trayType === "Full Tray" ? overrideTrays * 2 : overrideTrays;
       const trayNote = trayType === "Full Tray"
         ? `${fullTrays} full tray${fullTrays !== 1 ? "s" : ""} (${towersToCreate} towers)`
         : `${halfTrays} half tray${halfTrays !== 1 ? "s" : ""} (${towersToCreate} towers)`;
@@ -4827,6 +4830,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               <th style={thStyle}>Pipeline</th>
               <th style={thStyle}>Orders</th>
               <th style={thStyle}>Tray Type</th>
+              <th style={thStyle}># Trays</th>
               <th style={thStyle}>Seeded Date</th>
               <th style={thStyle}>Action</th>
               <th style={thStyle}></th>
@@ -4871,6 +4875,22 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                       <option value="Full Tray">Full Tray (88 seeds)</option>
                       <option value="Half Tray">Half Tray (44 seeds)</option>
                     </select>
+                  </td>
+                  <td style={tdStyle}>
+                    {(() => {
+                      const trayType = plantingTrayType[task.crop] || "Full Tray";
+                      const suggested = trayType === "Full Tray" ? Math.ceil(task.totalTowers / 2) : task.totalTowers;
+                      return (
+                        <input
+                          type="number"
+                          min={1}
+                          value={plantingTrayCount[task.crop] ?? String(suggested)}
+                          onChange={e => setPlantingTrayCount(prev => ({ ...prev, [task.crop]: e.target.value }))}
+                          style={{ ...compactInputStyle, width: 52 }}
+                          title="Override number of trays to plant"
+                        />
+                      );
+                    })()}
                   </td>
                   <td style={tdStyle}>
                     <input
