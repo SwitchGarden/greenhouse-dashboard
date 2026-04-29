@@ -1294,7 +1294,9 @@ const plantTodayTasks = useMemo(() => {
     const ck = cropAliases[normalizeCropKey(rawCropName)] || normalizeCropKey(rawCropName);
     if (isRepeatHarvestCrop(ck)) continue;
     const stage = normalizeStatus(getInventoryStage(item));
-    if (!["seeded", "transplanted", "growing", "ready"].includes(stage)) continue;
+    // Seeded items are seeds-in-tray, not plants-in-tower — kept out of pool and
+    // handled separately by seededTowerCount below to avoid double-counting.
+    if (!["transplanted", "growing", "ready"].includes(stage)) continue;
     const activePods = toNumber(getInventoryActivePods(item));
     const remainingLbs = toNumber(getInventoryRemainingExpectedLbs(item));
     if (activePods <= 0) continue;
@@ -1490,20 +1492,29 @@ const plantTodayTasks = useMemo(() => {
 
     if (!seedByDate) continue;
 
-    const seededCount = activeInventory.filter(
-      (item) => (getInventoryCrop(item) || "").trim().toLowerCase() === cropKey && normalizeStatus(getInventoryStage(item)) === "seeded"
-    ).length;
+    const seededItems = activeInventory.filter((item) => {
+      const ck2 = cropAliases[normalizeCropKey(getInventoryCrop(item) || "")] || normalizeCropKey(getInventoryCrop(item) || "");
+      return ck2 === cropKey && normalizeStatus(getInventoryStage(item)) === "seeded";
+    });
+    const seededCount = seededItems.length;
 
-    // Seeded inventory is already in the pipeline — subtract it from the remaining shortage
-    const remainingTowersNeeded = Math.max(0, newTowersNeeded - seededCount);
+    // For full-harvest (Plants) crops: seeded trays are excluded from the pool above,
+    // so subtract their tower-equivalent count here (88 pods = 2 towers, 44 pods = 1 tower).
+    // For lbs crops: inventoryByCrop already includes seeded items in futureEntries, so no extra subtraction.
+    let remainingTowersNeeded = newTowersNeeded;
+    if (qtyInPlants > 0) {
+      const seededTowerCount = seededItems
+        .reduce((sum, item) => sum + Math.max(1, Math.round(toNumber(getInventoryActivePods(item)) / HALF_TRAY_SEEDS)), 0);
+      remainingTowersNeeded = Math.max(0, newTowersNeeded - seededTowerCount);
+    }
     if (remainingTowersNeeded <= 0) continue;
 
-    const pipelineCount = activeInventory.filter(
-      (item) =>
-        (getInventoryCrop(item) || "").trim().toLowerCase() === cropKey &&
+    const pipelineCount = activeInventory.filter((item) => {
+      const ck2 = cropAliases[normalizeCropKey(getInventoryCrop(item) || "")] || normalizeCropKey(getInventoryCrop(item) || "");
+      return ck2 === cropKey &&
         ["seeded", "transplanted", "growing", "ready"].includes(normalizeStatus(getInventoryStage(item))) &&
-        !["harvested", "lost", "scrapped", "closed"].includes(normalizeStatus(getInventoryStatus(item)))
-    ).length;
+        !["harvested", "lost", "scrapped", "closed"].includes(normalizeStatus(getInventoryStatus(item)));
+    }).length;
 
     const cropInventory = inventoryByCrop.get(cropName) || inventoryByCrop.get(cropKey);
     const urgency: "Overdue" | "Today" | "Upcoming" =
