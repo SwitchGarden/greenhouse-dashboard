@@ -949,18 +949,21 @@ export default function App() {
     } catch { /* backend may not support this yet — localStorage already loaded */ }
   };
 
+  const [rawStaffNotesSample, setRawStaffNotesSample] = useState<string>("");
   const loadStaffNotes = async () => {
     const result = await postToBackend({ action: "loadStaffNotes" });
     if (result.ok) {
-      const rows = Array.isArray(result.rows) ? result.rows.map((r: Record<string, unknown>) => ({
+      const rawRows: Record<string, unknown>[] = Array.isArray(result.rows) ? result.rows : [];
+      if (rawRows.length > 0) setRawStaffNotesSample(JSON.stringify(rawRows[0]));
+      const rows = rawRows.map((r) => ({
         rowNumber: (r.rowNumber ?? r.RowNumber ?? 0) as number,
         Timestamp:    (r.Timestamp    ?? r.timestamp    ?? "") as string,
         Category:     (r.Category     ?? r.category     ?? "") as string,
-        Description:  (r.Description  ?? r.description  ?? "") as string,
+        Description:  (r.Description  ?? r.description  ?? r.Notes ?? r.notes ?? r.note ?? r.Note ?? "") as string,
         "Assigned To":(r["Assigned To"] ?? r["assigned_to"] ?? r.assignedTo ?? "") as string,
         "Due Date":   (r["Due Date"]  ?? r["due_date"]  ?? r.dueDate ?? "") as string,
         Status:       (r.Status       ?? r.status       ?? "") as string,
-      })) : [];
+      }));
       setStaffNotes(rows);
     }
   };
@@ -5974,14 +5977,10 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
           return (
             <div style={sectionStackStyle}>
-              {staffNotes.length > 0 && (
-                <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "10px 14px", fontSize: 11, marginBottom: 8, fontFamily: "monospace", wordBreak: "break-all" }}>
-                  <strong>Debug — all {staffNotes.length} notes:</strong><br/>
-                  {staffNotes.map(n => (
-                    <div key={n.rowNumber} style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid #bbf7d0" }}>
-                      row {n.rowNumber} | cat="{n.Category}" | desc="{n.Description}" | assignedTo="{n["Assigned To"]}" | status="{n.Status}"
-                    </div>
-                  ))}
+              {rawStaffNotesSample && (
+                <div style={{ background: "#fef9c3", border: "1px solid #fde047", borderRadius: 6, padding: "10px 14px", fontSize: 11, marginBottom: 8, fontFamily: "monospace", wordBreak: "break-all" }}>
+                  <strong>Debug — RAW first row from Apps Script:</strong><br/>
+                  {rawStaffNotesSample}
                 </div>
               )}
               {renderNotePanel("Equipment")}
