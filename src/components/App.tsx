@@ -68,6 +68,7 @@ type SalesOrderRow = {
   Frequency?: string;
   "Contract Start Date"?: string;
   "Contract End Date"?: string;
+  "Delivery Day"?: string;
   timestamp?: string;
   customer?: string;
   crop?: string;
@@ -87,6 +88,7 @@ type SalesOrderRow = {
   frequency?: string;
   contractStartDate?: string;
   contractEndDate?: string;
+  deliveryDay?: string;
 };
 
 type ProductionInventoryRow = {
@@ -519,17 +521,26 @@ const isOverdue = (dateString: string) => {
   return targetOnly.getTime() < todayOnly.getTime();
 };
 
-const generateRecurringDates = (startDate: string, endDate: string, frequency: string) => {
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const generateRecurringDates = (startDate: string, endDate: string, frequency: string, deliveryDay?: string) => {
   if (!startDate || !endDate) return [];
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start = new Date(startDate + "T12:00:00");
+  const end = new Date(endDate + "T12:00:00");
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
 
+  const targetDayIdx = deliveryDay ? DAY_NAMES.indexOf(deliveryDay) : -1;
   const dates: string[] = [];
   const current = new Date(start);
 
+  // Snap to first occurrence of delivery day on or after start date
+  if (targetDayIdx >= 0) {
+    const diff = ((targetDayIdx - current.getDay()) + 7) % 7;
+    current.setDate(current.getDate() + diff);
+  }
+
   while (current <= end) {
-    dates.push(formatDateInput(current));
+    dates.push(current.toISOString().slice(0, 10));
 
     if (frequency === "Weekly") {
       current.setDate(current.getDate() + 7);
@@ -537,6 +548,11 @@ const generateRecurringDates = (startDate: string, endDate: string, frequency: s
       current.setDate(current.getDate() + 14);
     } else if (frequency === "Monthly") {
       current.setMonth(current.getMonth() + 1);
+      // Re-snap to delivery day after advancing a month
+      if (targetDayIdx >= 0) {
+        const diff = ((targetDayIdx - current.getDay()) + 7) % 7;
+        current.setDate(current.getDate() + diff);
+      }
     } else {
       break;
     }
@@ -579,6 +595,7 @@ const getOrderEstimatedReadyDate = (row: SalesOrderRow) =>
 const getOrderStatus = (row: SalesOrderRow) => row.status || row.Status || "";
 const getOrderType = (row: SalesOrderRow) => row.orderType || row["Order Type"] || "One-Time";
 const getOrderFrequency = (row: SalesOrderRow) => row.frequency || row.Frequency || "";
+const getOrderDeliveryDay = (row: SalesOrderRow) => row.deliveryDay || row["Delivery Day"] || "";
 
 const getInventoryTower = (row: ProductionInventoryRow) => row.tower || row.Tower || "";
 const getInventoryTowerType = (row: ProductionInventoryRow) => row.towerType || row["Tower Type"] || "Low Density";
@@ -713,6 +730,7 @@ export default function App() {
   const saveOrderInProgress = useRef(false);
   const [salesOrderType, setSalesOrderType] = useState<"One-Time" | "Contract">("One-Time");
   const [salesFrequency, setSalesFrequency] = useState("Weekly");
+  const [salesDeliveryDay, setSalesDeliveryDay] = useState("");
   const [salesContractStartDate, setSalesContractStartDate] = useState("");
   const [salesContractEndDate, setSalesContractEndDate] = useState("");
 
@@ -2312,6 +2330,7 @@ const overdueOrders = useMemo(() => {
     setSalesNotes(order.notes || order.Notes || "");
     setSalesOrderType((getOrderType(order) as "One-Time" | "Contract") || "One-Time");
     setSalesFrequency(getOrderFrequency(order) || "Weekly");
+    setSalesDeliveryDay(getOrderDeliveryDay(order));
     setSalesContractStartDate(formatDateInput(order.contractStartDate || order["Contract Start Date"] || ""));
     setSalesContractEndDate(formatDateInput(order.contractEndDate || order["Contract End Date"] || ""));
     setSalesSaveMessage(`Editing order #${order.rowNumber}`);
@@ -2324,6 +2343,7 @@ const overdueOrders = useMemo(() => {
     setSalesNotes("");
     setSalesOrderType("One-Time");
     setSalesFrequency("Weekly");
+    setSalesDeliveryDay("");
     setSalesContractStartDate("");
     setSalesContractEndDate("");
     setDraftOrderLines([{ id: makeId(), crop: "", unitType: "Lbs" as OrderUnitType, quantityNeeded: "" }]);
@@ -2373,7 +2393,7 @@ const overdueOrders = useMemo(() => {
 
       const dates =
         salesOrderType === "Contract"
-          ? generateRecurringDates(salesContractStartDate, salesContractEndDate, salesFrequency)
+          ? generateRecurringDates(salesContractStartDate, salesContractEndDate, salesFrequency, salesDeliveryDay || undefined)
           : [salesDeliveryDate];
 
       if (!dates.length) {
@@ -2402,6 +2422,7 @@ const overdueOrders = useMemo(() => {
           status: "Planned",
           orderType: salesOrderType,
           frequency: salesOrderType === "Contract" ? salesFrequency : "",
+          deliveryDay: salesOrderType === "Contract" ? salesDeliveryDay : "",
           contractStartDate: salesOrderType === "Contract" ? salesContractStartDate : "",
           contractEndDate: salesOrderType === "Contract" ? salesContractEndDate : "",
         });
@@ -2461,6 +2482,7 @@ const overdueOrders = useMemo(() => {
             status: "Planned",
             orderType: salesOrderType,
             frequency: salesOrderType === "Contract" ? salesFrequency : "",
+            deliveryDay: salesOrderType === "Contract" ? salesDeliveryDay : "",
             contractStartDate: salesOrderType === "Contract" ? salesContractStartDate : "",
             contractEndDate: salesOrderType === "Contract" ? salesContractEndDate : "",
           });
@@ -4030,6 +4052,12 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                         <option value="Weekly">Weekly</option>
                         <option value="Bi-Weekly">Bi-Weekly</option>
                         <option value="Monthly">Monthly</option>
+                      </select>
+                    </Field>
+                    <Field label="Delivery Day">
+                      <select value={salesDeliveryDay} onChange={(e) => setSalesDeliveryDay(e.target.value)} style={inputStyle}>
+                        <option value="">Any day (use start date)</option>
+                        {DAY_NAMES.map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
                     </Field>
                     <Field label="Contract Start Date">
