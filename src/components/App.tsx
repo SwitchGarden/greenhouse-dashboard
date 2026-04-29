@@ -769,6 +769,14 @@ export default function App() {
   const [maintSaving, setMaintSaving] = useState(false);
   const [maintMessage, setMaintMessage] = useState("");
 
+  // Kitchen Transfer form
+  const [ktCrop, setKtCrop] = useState("");
+  const [ktLbs, setKtLbs] = useState("");
+  const [ktDate, setKtDate] = useState(formatDateInput(new Date()));
+  const [ktNote, setKtNote] = useState("");
+  const [ktSaving, setKtSaving] = useState(false);
+  const [ktMessage, setKtMessage] = useState("");
+
   const [message, setMessage] = useState("");
 
   // Quick Action form
@@ -1981,7 +1989,7 @@ const overdueOrders = useMemo(() => {
     const currStartStr = formatDateInput(getStartOfWeek(new Date()));
     const currEndStr = formatDateInput(getEndOfWeek(new Date()));
 
-    const kitchenLbs = salesOrders
+    const kitchenOrderLbs = salesOrders
       .filter((o) => {
         const customer = (getOrderCustomer(o) || "").toLowerCase();
         const status = normalizeStatus(getOrderStatus(o));
@@ -1990,6 +1998,14 @@ const overdueOrders = useMemo(() => {
                !!delivery && delivery >= currStartStr && delivery <= currEndStr;
       })
       .reduce((sum, o) => sum + quantityToLbs(getOrderUnitType(o), toNumber(getOrderQuantityNeeded(o))), 0);
+    const kitchenTransferLbs = staffRows
+      .filter((r) => {
+        const m = (getStaffMode(r) || "").toLowerCase();
+        const d = formatDateInput(getStaffDate(r) || getStaffTimestamp(r));
+        return m === "kitchen transfer" && !!d && d >= currStartStr && d <= currEndStr;
+      })
+      .reduce((sum, r) => sum + toNumber(getStaffLbs(r)), 0);
+    const kitchenLbs = kitchenOrderLbs + kitchenTransferLbs;
 
     const pantryLbs = salesOrders
       .filter((o) => {
@@ -2008,7 +2024,7 @@ const overdueOrders = useMemo(() => {
     const prevStartStr = formatDateInput(prevStart);
     const prevEndStr = formatDateInput(prevEnd);
 
-    const kitchenLbsPrevWeek = salesOrders
+    const kitchenOrderLbsPrev = salesOrders
       .filter((o) => {
         const customer = (getOrderCustomer(o) || "").toLowerCase();
         const status = normalizeStatus(getOrderStatus(o));
@@ -2017,6 +2033,14 @@ const overdueOrders = useMemo(() => {
                !!delivery && delivery >= prevStartStr && delivery <= prevEndStr;
       })
       .reduce((sum, o) => sum + quantityToLbs(getOrderUnitType(o), toNumber(getOrderQuantityNeeded(o))), 0);
+    const kitchenTransferLbsPrev = staffRows
+      .filter((r) => {
+        const m = (getStaffMode(r) || "").toLowerCase();
+        const d = formatDateInput(getStaffDate(r) || getStaffTimestamp(r));
+        return m === "kitchen transfer" && !!d && d >= prevStartStr && d <= prevEndStr;
+      })
+      .reduce((sum, r) => sum + toNumber(getStaffLbs(r)), 0);
+    const kitchenLbsPrevWeek = kitchenOrderLbsPrev + kitchenTransferLbsPrev;
 
     const pantryLbsPrevWeek = salesOrders
       .filter((o) => {
@@ -2045,7 +2069,7 @@ const overdueOrders = useMemo(() => {
       kitchenLbsPrevWeek,
       pantryLbsPrevWeek,
     };
-  }, [salesOrders, activeInventory, overdueOrders, weeklyMetrics]);
+  }, [salesOrders, activeInventory, overdueOrders, weeklyMetrics, staffRows]);
 
   const shortageAlerts = useMemo(() => {
     const openOrders = salesOrders
@@ -3799,6 +3823,36 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     } finally {
       setQhSaving(false);
     }
+  };
+
+  const handleKitchenTransfer = async () => {
+    if (!ktLbs || Number(ktLbs) <= 0) {
+      setKtMessage("Please enter the lbs transferred.");
+      return;
+    }
+    setKtSaving(true); setKtMessage("");
+    const result = await postToBackend({
+      action: "saveStaffAction",
+      mode: "Kitchen Transfer",
+      tower: "",
+      crop: ktCrop,
+      lbs: Number(ktLbs),
+      podsChanged: "",
+      status: "Completed",
+      stage: "",
+      date: ktDate,
+      scrapType: "",
+      note: ktNote,
+    });
+    if (result.ok) {
+      setKtLbs(""); setKtCrop(""); setKtNote("");
+      setKtDate(formatDateInput(new Date()));
+      setKtMessage("Saved.");
+      await loadStaffActions();
+    } else {
+      setKtMessage("Error: " + result.message);
+    }
+    setKtSaving(false);
   };
 
   const handleMarkPacked = async (task: {
@@ -5707,6 +5761,34 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           </tbody>
         </table>
       </TableScroll>
+    </Panel>
+
+    <Panel title="Kitchen Transfer">
+      <div style={{ fontSize: 13, color: "#475569", marginBottom: 12 }}>
+        Log leftover greens transferred to the kitchen after the farmers market or any other kitchen delivery.
+      </div>
+      <FormGrid columns={4}>
+        <Field label="Date *">
+          <input type="date" value={ktDate} onChange={e => setKtDate(e.target.value)} style={inputStyle} />
+        </Field>
+        <Field label="Lbs Transferred *">
+          <input type="number" min="0" step="0.01" value={ktLbs} onChange={e => setKtLbs(e.target.value)} style={inputStyle} placeholder="e.g. 2.5" />
+        </Field>
+        <Field label="Crop (optional)">
+          <select value={ktCrop} onChange={e => setKtCrop(e.target.value)} style={inputStyle}>
+            <option value="">— Select crop —</option>
+            {uniqueCrops.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </Field>
+        <Field label="Note (optional)">
+          <input value={ktNote} onChange={e => setKtNote(e.target.value)} style={inputStyle} placeholder="e.g. post-market leftovers" />
+        </Field>
+      </FormGrid>
+      <ActionRow message={ktMessage}>
+        <button style={primaryButtonStyle} disabled={ktSaving} onClick={handleKitchenTransfer}>
+          {ktSaving ? "Saving…" : "Log Transfer"}
+        </button>
+      </ActionRow>
     </Panel>
 
     <Panel title="Overdue Orders">
