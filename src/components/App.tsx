@@ -771,7 +771,8 @@ export default function App() {
 
   // Kitchen Transfer form
   const [ktCrop, setKtCrop] = useState("");
-  const [ktLbs, setKtLbs] = useState("");
+  const [ktUnit, setKtUnit] = useState<"Lbs" | "Plants">("Lbs");
+  const [ktQty, setKtQty] = useState("");
   const [ktDate, setKtDate] = useState(formatDateInput(new Date()));
   const [ktNote, setKtNote] = useState("");
   const [ktSaving, setKtSaving] = useState(false);
@@ -3826,26 +3827,27 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
   };
 
   const handleKitchenTransfer = async () => {
-    if (!ktLbs || Number(ktLbs) <= 0) {
-      setKtMessage("Please enter the lbs transferred.");
+    if (!ktQty || Number(ktQty) <= 0) {
+      setKtMessage(`Please enter the ${ktUnit === "Plants" ? "number of plants" : "lbs"} transferred.`);
       return;
     }
     setKtSaving(true); setKtMessage("");
+    const qty = Number(ktQty);
     const result = await postToBackend({
       action: "saveStaffAction",
       mode: "Kitchen Transfer",
       tower: "",
       crop: ktCrop,
-      lbs: Number(ktLbs),
-      podsChanged: "",
+      lbs: ktUnit === "Lbs" ? qty : "",
+      podsChanged: ktUnit === "Plants" ? qty : "",
       status: "Completed",
       stage: "",
       date: ktDate,
       scrapType: "",
-      note: ktNote,
+      note: [ktNote, `Unit: ${ktUnit}; Qty: ${qty}`].filter(Boolean).join(" | "),
     });
     if (result.ok) {
-      setKtLbs(""); setKtCrop(""); setKtNote("");
+      setKtQty(""); setKtCrop(""); setKtNote("");
       setKtDate(formatDateInput(new Date()));
       setKtMessage("Saved.");
       await loadStaffActions();
@@ -5767,12 +5769,18 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       <div style={{ fontSize: 13, color: "#475569", marginBottom: 12 }}>
         Log leftover greens transferred to the kitchen after the farmers market or any other kitchen delivery.
       </div>
-      <FormGrid columns={4}>
+      <FormGrid columns={5}>
         <Field label="Date *">
           <input type="date" value={ktDate} onChange={e => setKtDate(e.target.value)} style={inputStyle} />
         </Field>
-        <Field label="Lbs Transferred *">
-          <input type="number" min="0" step="0.01" value={ktLbs} onChange={e => setKtLbs(e.target.value)} style={inputStyle} placeholder="e.g. 2.5" />
+        <Field label="Unit">
+          <select value={ktUnit} onChange={e => { setKtUnit(e.target.value as "Lbs" | "Plants"); setKtQty(""); }} style={inputStyle}>
+            <option value="Lbs">Lbs</option>
+            <option value="Plants">Plants (heads)</option>
+          </select>
+        </Field>
+        <Field label={ktUnit === "Plants" ? "Plants Transferred *" : "Lbs Transferred *"}>
+          <input type="number" min="0" step={ktUnit === "Plants" ? "1" : "0.01"} value={ktQty} onChange={e => setKtQty(e.target.value)} style={inputStyle} placeholder={ktUnit === "Plants" ? "e.g. 12" : "e.g. 2.5"} />
         </Field>
         <Field label="Crop (optional)">
           <select value={ktCrop} onChange={e => setKtCrop(e.target.value)} style={inputStyle}>
