@@ -5974,6 +5974,17 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
           return (
             <div style={sectionStackStyle}>
+              {staffNotes.length === 0 && (
+                <div style={{ background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 6, padding: "10px 14px", fontSize: 13, marginBottom: 8 }}>
+                  Debug: 0 notes loaded. Raw sample from backend will appear here after you save a note and reload.
+                </div>
+              )}
+              {staffNotes.length > 0 && (
+                <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "10px 14px", fontSize: 12, marginBottom: 8, fontFamily: "monospace", wordBreak: "break-all" }}>
+                  Debug: {staffNotes.length} notes loaded. First row keys: {Object.keys(staffNotes[0]).join(", ")}<br/>
+                  First row values: {JSON.stringify(staffNotes[0])}
+                </div>
+              )}
               {renderNotePanel("Equipment")}
               {renderNotePanel("Purchase")}
               <Panel title="Plant Maintenance Log">
