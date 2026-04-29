@@ -771,7 +771,7 @@ export default function App() {
 
   // Kitchen Transfer form
   const [ktCrop, setKtCrop] = useState("");
-  const [ktUnit, setKtUnit] = useState<"Lbs" | "Plants">("Lbs");
+  const [ktUnit, setKtUnit] = useState<"Lbs" | "Plants" | "6oz Bag" | "6oz Clamshell" | "0.75oz Small Bag">("Lbs");
   const [ktQty, setKtQty] = useState("");
   const [ktDate, setKtDate] = useState(formatDateInput(new Date()));
   const [ktNote, setKtNote] = useState("");
@@ -3828,7 +3828,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
   const handleKitchenTransfer = async () => {
     if (!ktQty || Number(ktQty) <= 0) {
-      setKtMessage(`Please enter the ${ktUnit === "Plants" ? "number of plants" : "lbs"} transferred.`);
+      setKtMessage(`Please enter the quantity transferred.`);
       return;
     }
     if (ktUnit === "Plants" && !ktCrop) {
@@ -3837,7 +3837,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     }
     setKtSaving(true); setKtMessage("");
     const qty = Number(ktQty);
-    const lbsValue = ktUnit === "Lbs" ? qty : calculateExpectedLbs(ktCrop, qty);
+    const lbsValue = ktUnit === "Plants" ? calculateExpectedLbs(ktCrop, qty) : quantityToLbs(ktUnit, qty);
     const result = await postToBackend({
       action: "saveStaffAction",
       mode: "Kitchen Transfer",
@@ -5779,13 +5779,16 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           <input type="date" value={ktDate} onChange={e => setKtDate(e.target.value)} style={inputStyle} />
         </Field>
         <Field label="Unit">
-          <select value={ktUnit} onChange={e => { setKtUnit(e.target.value as "Lbs" | "Plants"); setKtQty(""); }} style={inputStyle}>
+          <select value={ktUnit} onChange={e => { setKtUnit(e.target.value as typeof ktUnit); setKtQty(""); }} style={inputStyle}>
             <option value="Lbs">Lbs</option>
             <option value="Plants">Plants (heads)</option>
+            <option value="6oz Bag">6oz Bag</option>
+            <option value="6oz Clamshell">6oz Clamshell</option>
+            <option value="0.75oz Small Bag">0.75oz Small Bag</option>
           </select>
         </Field>
-        <Field label={ktUnit === "Plants" ? "Plants Transferred *" : "Lbs Transferred *"}>
-          <input type="number" min="0" step={ktUnit === "Plants" ? "1" : "0.01"} value={ktQty} onChange={e => setKtQty(e.target.value)} style={inputStyle} placeholder={ktUnit === "Plants" ? "e.g. 12" : "e.g. 2.5"} />
+        <Field label={ktUnit === "Plants" ? "Plants Transferred *" : ktUnit === "Lbs" ? "Lbs Transferred *" : "Bags / Units Transferred *"}>
+          <input type="number" min="0" step={ktUnit === "Lbs" ? "0.01" : "1"} value={ktQty} onChange={e => setKtQty(e.target.value)} style={inputStyle} placeholder={ktUnit === "Lbs" ? "e.g. 2.5" : "e.g. 12"} />
         </Field>
         <Field label="Crop (optional)">
           <select value={ktCrop} onChange={e => setKtCrop(e.target.value)} style={inputStyle}>
