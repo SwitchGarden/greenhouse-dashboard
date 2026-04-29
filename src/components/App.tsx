@@ -5847,7 +5847,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             await loadMaintenanceLogs();
           };
 
-          const NoteTable = ({ category }: { category: string }) => {
+          const renderNotePanel = (category: "Equipment" | "Purchase") => {
             const items = notesByCategory(category);
             const statusOptions = category === "Purchase"
               ? ["In Progress", "Purchased", "Completed"]
@@ -5963,8 +5963,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
           return (
             <div style={sectionStackStyle}>
-              <NoteTable category="Equipment" />
-              <NoteTable category="Purchase" />
+              {renderNotePanel("Equipment")}
+              {renderNotePanel("Purchase")}
               <Panel title="Plant Maintenance Log">
                 <div style={{ marginBottom: 16, display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "end" }}>
                   <Field label="Date">
