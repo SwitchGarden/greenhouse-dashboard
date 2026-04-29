@@ -951,7 +951,18 @@ export default function App() {
 
   const loadStaffNotes = async () => {
     const result = await postToBackend({ action: "loadStaffNotes" });
-    if (result.ok) setStaffNotes(Array.isArray(result.rows) ? result.rows : []);
+    if (result.ok) {
+      const rows = Array.isArray(result.rows) ? result.rows.map((r: Record<string, unknown>) => ({
+        rowNumber: (r.rowNumber ?? r.RowNumber ?? 0) as number,
+        Timestamp:    (r.Timestamp    ?? r.timestamp    ?? "") as string,
+        Category:     (r.Category     ?? r.category     ?? "") as string,
+        Description:  (r.Description  ?? r.description  ?? "") as string,
+        "Assigned To":(r["Assigned To"] ?? r["assigned_to"] ?? r.assignedTo ?? "") as string,
+        "Due Date":   (r["Due Date"]  ?? r["due_date"]  ?? r.dueDate ?? "") as string,
+        Status:       (r.Status       ?? r.status       ?? "") as string,
+      })) : [];
+      setStaffNotes(rows);
+    }
   };
 
   const loadMaintenanceLogs = async () => {
