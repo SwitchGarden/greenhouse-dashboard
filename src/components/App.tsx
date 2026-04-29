@@ -1403,7 +1403,18 @@ const plantTodayTasks = useMemo(() => {
       }
       pool.readyPlants = 0;
       pool.futureEntries = stillFuture;
+      // Add proposed new towers to pool so later demands can draw from them
+      if (newTowersNeeded > 0) {
+        const proposedReadyDate = addDays(today, 42);
+        pool.futureEntries = [...pool.futureEntries, { readyDate: proposedReadyDate, lbs: 0, plants: newTowersNeeded * HALF_TRAY_SEEDS }];
+      }
     } else {
+      const cropProfile = getCropProfile(cropKey);
+      // Skip mix/assembled crops with no grow profile — they have no direct seeding yield
+      if (cropProfile.expectedLbsPerTower === 0 && !SALAD_MIX_RECIPES[cropKey]) {
+        cropPools.set(cropKey, pool);
+        continue;
+      }
       const shortageLbs = Math.max(0, qtyInLbs - availableLbsByDue);
       const avgQtyPerTower = Math.max(0.1, calculateExpectedLbs(cropKey, HALF_TRAY_SEEDS));
       newTowersNeeded = shortageLbs > 0 ? Math.ceil(shortageLbs / avgQtyPerTower) : 0;
@@ -1411,6 +1422,12 @@ const plantTodayTasks = useMemo(() => {
       pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
       pool.readyPlants = Math.max(0, availablePlantsByDue - Math.round((consumedLbs * 16) / 6));
       pool.futureEntries = remainingFutureEntries;
+      // Add proposed new towers to pool so later demands can draw from them
+      if (newTowersNeeded > 0) {
+        const proposedReadyDate = addDays(today, 42);
+        const proposedLbs = newTowersNeeded * avgQtyPerTower;
+        pool.futureEntries = [...pool.futureEntries, { readyDate: proposedReadyDate, lbs: proposedLbs, plants: 0 }];
+      }
     }
 
     cropPools.set(cropKey, pool);
