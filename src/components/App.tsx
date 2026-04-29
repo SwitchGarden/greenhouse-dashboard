@@ -6164,7 +6164,7 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
             <div style={sectionStackStyle}>
               {renderNotePanel("Equipment")}
               {renderNotePanel("Purchase")}
-              <Panel title="Plant Maintenance Log">
+              <Panel title="Chemical Log">
                 <div style={{ marginBottom: 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
                   <Field label="Applicator Name *">
                     <input style={inputStyle} value={maintName} onChange={e => setMaintName(e.target.value)}
