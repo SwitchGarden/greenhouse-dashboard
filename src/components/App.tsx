@@ -1143,7 +1143,9 @@ export default function App() {
     const qtyNeeded = toNumber(activeLine?.quantityNeeded || "");
     const cropName = (activeLine?.crop || "").trim();
     const plannerUnitType: OrderUnitType = activeLine?.unitType || "Lbs";
-    const cropInventory = inventoryByCrop.get(cropName);
+    // Normalize crop name for inventory lookup to handle case/alias differences
+    const cropLookupKey = cropAliases[normalizeCropKey(cropName)] || normalizeCropKey(cropName);
+    const cropInventory = inventoryByCrop.get(cropName) || inventoryByCrop.get(cropLookupKey);
     const targetDate = salesOrderType === "Contract" ? salesContractStartDate : salesDeliveryDate;
 
     const committedSameCropLbs = salesOrders.reduce((sum, order) => {
@@ -1256,16 +1258,29 @@ export default function App() {
         totalNewTowers: 0,
       };
       current.items.push(order);
-      current.totalNewTowers += toNumber(getOrderNewTowersToPlant(order));
       groups.set(key, current);
     });
 
     const result = Array.from(groups.values()).sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
     result.forEach((g) => {
       g.cropSummary = g.items.map((o) => `${getOrderCrop(o)} ×${getOrderQuantityNeeded(o)}`).join(", ");
+      // Live-recalculate towers from current inventory so the column stays accurate as inventory changes
+      g.totalNewTowers = g.items.reduce((sum, order) => {
+        const rawCrop = getOrderCrop(order);
+        const ck = cropAliases[normalizeCropKey(rawCrop)] || normalizeCropKey(rawCrop);
+        if (SALAD_MIX_RECIPES[ck]) return sum; // assembled mix — no direct towers
+        const unitType = getOrderUnitType(order);
+        const qty = toNumber(getOrderQuantityNeeded(order));
+        const qtyInLbs = quantityToLbs(unitType, qty);
+        const avgLbsPerTower = Math.max(0.1, calculateExpectedLbs(rawCrop, 44));
+        const towersNeeded = qtyInLbs > 0 ? Math.ceil(qtyInLbs / avgLbsPerTower) : (unitType === "Plants" ? Math.ceil(qty / 44) : 0);
+        const inv = inventoryByCrop.get(rawCrop) || inventoryByCrop.get(ck);
+        const pipelineTowers = inv?.pipelineTowers || 0;
+        return sum + Math.max(0, towersNeeded - pipelineTowers);
+      }, 0);
     });
     return result;
-  }, [filteredSavedOrders]);
+  }, [filteredSavedOrders, inventoryByCrop]);
 
  const seededInventory = useMemo(() => {
   return activeInventory
@@ -2469,7 +2484,7 @@ const overdueOrders = useMemo(() => {
         const cropKey2 = cropAliases[normalizeCropKey(line.crop)] || normalizeCropKey(line.crop);
         const isMixCrop = !!SALAD_MIX_RECIPES[cropKey2];
         const avgQtyPerTower = isMixCrop ? 1 : Math.max(0.1, calculateExpectedLbs(line.crop, 44));
-        const cropInventory = inventoryByCrop.get(line.crop);
+        const cropInventory = inventoryByCrop.get(line.crop) || inventoryByCrop.get(cropKey2);
         const availableQty = availableLbsToUnitQty(line.unitType, cropInventory?.readyNowLbs || 0, cropInventory?.readyNowPlants || 0);
         const shortageQty = Math.max(0, lineQty - availableQty);
         // Mix crops (salad mixes) are assembled from component crops — no direct towers
