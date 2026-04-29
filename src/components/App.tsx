@@ -404,13 +404,17 @@ const printSection = (title: string, headers: string[], rows: string[][]) => {
   const rowsHtml = rows.map(row =>
     `<tr>${row.map(cell => `<td>${cell ?? ""}</td>`).join("")}</tr>`
   ).join("");
-  const html = `<!DOCTYPE html><html><head><title>${title}</title><style>
+  const html = `<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <style>
     @page { size: ${landscape ? "11in 8.5in" : "8.5in 11in"}; margin: 0.5in; }
     * { box-sizing: border-box; }
     body { font-family: Arial, sans-serif; font-size: 11px; color: #000; margin: 0; }
     h2 { margin: 0 0 3px 0; font-size: 15px; }
     .date { color: #555; font-size: 10px; margin-bottom: 12px; }
-    table { width: 100%; border-collapse: collapse; table-layout: auto; }
+    table { width: 100%; border-collapse: collapse; }
     th {
       background: #0f172a;
       color: #fff;
@@ -427,7 +431,6 @@ const printSection = (title: string, headers: string[], rows: string[][]) => {
       font-size: 11px;
       word-wrap: break-word;
       overflow-wrap: break-word;
-      max-width: 0;
     }
     tr { page-break-inside: avoid; }
     tr:nth-child(even) td {
@@ -435,16 +438,23 @@ const printSection = (title: string, headers: string[], rows: string[][]) => {
       print-color-adjust: exact;
       -webkit-print-color-adjust: exact;
     }
-    /* Last column (typically Orders/Notes) gets extra width */
     td:last-child, th:last-child { width: 35%; }
-  </style></head><body>
-    <h2>${title}</h2>
-    <div class="date">${today}</div>
-    <table><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table>
-    <script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); }<\/script>
-  </body></html>`;
-  const w = window.open("", "_blank");
-  if (w) { w.document.write(html); w.document.close(); }
+  </style>
+</head><body>
+  <h2>${title}</h2>
+  <div class="date">${today}</div>
+  <table><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table>
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() { window.print(); }, 400);
+      window.addEventListener('afterprint', function() { window.close(); });
+    });
+  <\/script>
+</body></html>`;
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, "_blank");
+  if (w) setTimeout(() => URL.revokeObjectURL(url), 60000);
 };
 
 const getStartOfWeek = (date: Date) => {
