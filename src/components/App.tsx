@@ -199,7 +199,7 @@ const DEFAULT_MARKET_CONFIG: FarmersMarketConfig = {
 
 const REPEAT_HARVEST_CROPS = new Set([
   "arugula", "basil", "thai_basil", "mint", "kale", "brassica",
-  "red_mizuna", "green_mizuna", "swiss_chard", "dill", "five_star", "wildfire",
+  "mizuna", "red_mizuna", "green_mizuna", "swiss_chard", "dill", "five_star", "wildfire",
 ]);
 
 // Salad mix recipes: crop key → array of { crop (normalized key), oz per clamshell }
@@ -1471,6 +1471,10 @@ const plantTodayTasks = useMemo(() => {
 
   demands.sort((a, b) => new Date(a.dueDate || "2100-01-01").getTime() - new Date(b.dueDate || "2100-01-01").getTime());
 
+  // Tracks how many past-due seeding slots have been assigned per repeat-harvest crop,
+  // so each week's demand gets its own upcoming Wednesday rather than piling into "today".
+  const repeatHarvestSeedingOffset = new Map<string, number>();
+
   for (const demand of demands) {
     const { cropKey, cropName, dueDate, qtyInLbs, qtyInPlants, customer } = demand;
     const seedByDate = addDays(dueDate, -42);
@@ -1595,9 +1599,24 @@ const plantTodayTasks = useMemo(() => {
     }).length;
 
     const cropInventory = inventoryByCrop.get(cropName) || inventoryByCrop.get(cropKey);
+
+    // For repeat-harvest/trim crops with a past-due seed date, stagger each demand
+    // across successive Wednesdays instead of collapsing everything into "today".
+    // This produces a rolling weekly seeding schedule (2 towers/week) rather than
+    // one large batch all maturing on the same day.
+    let effectiveSeedByDate: string;
+    if (seedByDate < today && REPEAT_HARVEST_CROPS.has(cropKey) && qtyInLbs > 0) {
+      const offset = repeatHarvestSeedingOffset.get(cropKey) || 0;
+      repeatHarvestSeedingOffset.set(cropKey, offset + 1);
+      const baseDate = addDays(today, offset * 7);
+      const dow = new Date(baseDate + "T12:00:00").getDay();
+      effectiveSeedByDate = addDays(baseDate, (3 - dow + 7) % 7);
+    } else {
+      effectiveSeedByDate = seedByDate < today ? today : seedByDate;
+    }
+
     const urgency: "Overdue" | "Today" | "Upcoming" =
-      seedByDate < today ? "Overdue" : seedByDate === today ? "Today" : "Upcoming";
-    const effectiveSeedByDate = seedByDate < today ? today : seedByDate;
+      effectiveSeedByDate < today ? "Overdue" : effectiveSeedByDate === today ? "Today" : "Upcoming";
     const key = `${effectiveSeedByDate}__${cropKey}`;
 
     const current = grouped.get(key) || {
