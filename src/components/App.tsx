@@ -16,7 +16,16 @@ type StaffNote = {
 type MaintenanceLog = {
   rowNumber: number;
   Timestamp?: string;
+  Name?: string;
   Date?: string;
+  "Product Name"?: string;
+  "EPA Registration"?: string;
+  "Area Size"?: string;
+  "Amount Applied"?: string;
+  Location?: string;
+  Crop?: string;
+  Notes?: string;
+  // legacy field kept for backwards compatibility
   Note?: string;
 };
 
@@ -748,7 +757,14 @@ export default function App() {
   const [editNoteSaving, setEditNoteSaving] = useState(false);
 
   // Maintenance log form state
+  const [maintName, setMaintName] = useState("");
   const [maintDate, setMaintDate] = useState(formatDateInput(new Date()));
+  const [maintProduct, setMaintProduct] = useState("");
+  const [maintEPA, setMaintEPA] = useState("");
+  const [maintAreaSize, setMaintAreaSize] = useState("");
+  const [maintAmountApplied, setMaintAmountApplied] = useState("");
+  const [maintLocation, setMaintLocation] = useState("");
+  const [maintCrop, setMaintCrop] = useState("");
   const [maintNote, setMaintNote] = useState("");
   const [maintSaving, setMaintSaving] = useState(false);
   const [maintMessage, setMaintMessage] = useState("");
@@ -5994,11 +6010,29 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           };
 
           const handleSaveMaint = async () => {
-            if (!maintNote.trim()) { setMaintMessage("Note is required."); return; }
+            if (!maintName.trim() && !maintProduct.trim()) {
+              setMaintMessage("Name and Product Name are required.");
+              return;
+            }
             setMaintSaving(true); setMaintMessage("");
-            const result = await postToBackend({ action: "saveMaintenanceLog", date: maintDate, note: maintNote.trim() });
+            const result = await postToBackend({
+              action: "saveMaintenanceLog",
+              name: maintName.trim(),
+              date: maintDate,
+              productName: maintProduct.trim(),
+              epaRegistration: maintEPA.trim(),
+              areaSize: maintAreaSize.trim(),
+              amountApplied: maintAmountApplied.trim(),
+              location: maintLocation.trim(),
+              crop: maintCrop.trim(),
+              note: maintNote.trim(),
+            });
             if (result.ok) {
-              setMaintNote(""); setMaintMessage("Saved.");
+              setMaintName(""); setMaintProduct(""); setMaintEPA("");
+              setMaintAreaSize(""); setMaintAmountApplied(""); setMaintLocation("");
+              setMaintCrop(""); setMaintNote("");
+              setMaintDate(formatDateInput(new Date()));
+              setMaintMessage("Saved.");
               await loadMaintenanceLogs();
             } else {
               setMaintMessage("Error: " + result.message);
@@ -6131,17 +6165,47 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               {renderNotePanel("Equipment")}
               {renderNotePanel("Purchase")}
               <Panel title="Plant Maintenance Log">
-                <div style={{ marginBottom: 16, display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "end" }}>
-                  <Field label="Date">
+                <div style={{ marginBottom: 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
+                  <Field label="Applicator Name *">
+                    <input style={inputStyle} value={maintName} onChange={e => setMaintName(e.target.value)}
+                      placeholder="Who applied it" />
+                  </Field>
+                  <Field label="Application Date">
                     <input style={inputStyle} type="date" value={maintDate} onChange={e => setMaintDate(e.target.value)} />
                   </Field>
-                  <Field label="Note (treatment, chemical, area treated, etc.)">
+                  <Field label="Brand / Product Name *">
+                    <input style={inputStyle} value={maintProduct} onChange={e => setMaintProduct(e.target.value)}
+                      placeholder="e.g. Neem Oil, Safer Soap" />
+                  </Field>
+                  <Field label="EPA Registration #">
+                    <input style={inputStyle} value={maintEPA} onChange={e => setMaintEPA(e.target.value)}
+                      placeholder="e.g. 12345-67" />
+                  </Field>
+                  <Field label="Size of Area Treated">
+                    <input style={inputStyle} value={maintAreaSize} onChange={e => setMaintAreaSize(e.target.value)}
+                      placeholder="e.g. 200 sq ft, 4 towers" />
+                  </Field>
+                  <Field label="Total Amount Applied">
+                    <input style={inputStyle} value={maintAmountApplied} onChange={e => setMaintAmountApplied(e.target.value)}
+                      placeholder="e.g. 2 oz, 1 gallon" />
+                  </Field>
+                  <Field label="Location">
+                    <input style={inputStyle} value={maintLocation} onChange={e => setMaintLocation(e.target.value)}
+                      placeholder="e.g. Row A, Tower B3" />
+                  </Field>
+                  <Field label="Crop">
+                    <input style={inputStyle} value={maintCrop} onChange={e => setMaintCrop(e.target.value)}
+                      placeholder="e.g. Arugula, Basil" />
+                  </Field>
+                </div>
+                <div style={{ marginBottom: 12, display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "end" }}>
+                  <Field label="Notes">
                     <input style={inputStyle} value={maintNote} onChange={e => setMaintNote(e.target.value)}
-                      placeholder="e.g. Sprayed towers 1-4 for aphids with neem oil" />
+                      placeholder="Additional details, reason for treatment, observations…" />
                   </Field>
                   <div>
                     <button style={primaryButtonStyle} disabled={maintSaving} onClick={handleSaveMaint}>
-                      {maintSaving ? "Saving…" : "Log"}
+                      {maintSaving ? "Saving…" : "Log Entry"}
                     </button>
                   </div>
                 </div>
@@ -6154,7 +6218,14 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                       <thead>
                         <tr>
                           <th style={thStyle}>Date</th>
-                          <th style={thStyle}>Note</th>
+                          <th style={thStyle}>Name</th>
+                          <th style={thStyle}>Product Name</th>
+                          <th style={thStyle}>EPA Reg #</th>
+                          <th style={thStyle}>Area Treated</th>
+                          <th style={thStyle}>Amount Applied</th>
+                          <th style={thStyle}>Location</th>
+                          <th style={thStyle}>Crop</th>
+                          <th style={thStyle}>Notes</th>
                           <th style={thStyle}></th>
                         </tr>
                       </thead>
@@ -6162,7 +6233,14 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                         {sortedLogs.map(log => (
                           <tr key={log.rowNumber} style={{ borderBottom: "1px solid #e5e7eb" }}>
                             <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>{formatDateDisplay((log.Date || "").toString().slice(0, 10))}</td>
-                            <td style={tdStyle}>{log.Note}</td>
+                            <td style={tdStyle}>{log.Name || "—"}</td>
+                            <td style={tdStyle}>{log["Product Name"] || "—"}</td>
+                            <td style={tdStyle}>{log["EPA Registration"] || "—"}</td>
+                            <td style={tdStyle}>{log["Area Size"] || "—"}</td>
+                            <td style={tdStyle}>{log["Amount Applied"] || "—"}</td>
+                            <td style={tdStyle}>{log.Location || "—"}</td>
+                            <td style={tdStyle}>{log.Crop || "—"}</td>
+                            <td style={tdStyle}>{log.Notes || log.Note || "—"}</td>
                             <td style={tdStyle}>
                               <button style={{ ...secondaryButtonStyle, color: "#dc2626", borderColor: "#fca5a5" }}
                                 onClick={() => handleDeleteMaint(log.rowNumber)}>Delete</button>
