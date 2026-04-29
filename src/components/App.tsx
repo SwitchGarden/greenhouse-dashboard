@@ -949,12 +949,10 @@ export default function App() {
     } catch { /* backend may not support this yet — localStorage already loaded */ }
   };
 
-  const [rawStaffNotesSample, setRawStaffNotesSample] = useState<string>("");
   const loadStaffNotes = async () => {
     const result = await postToBackend({ action: "loadStaffNotes" });
     if (result.ok) {
       const rawRows: Record<string, unknown>[] = Array.isArray(result.rows) ? result.rows : [];
-      if (rawRows.length > 0) setRawStaffNotesSample(JSON.stringify(rawRows[0]));
       const rows = rawRows.map((r) => ({
         rowNumber: (r.rowNumber ?? r.RowNumber ?? 0) as number,
         Timestamp:    (r.Timestamp    ?? r.timestamp    ?? "") as string,
@@ -5977,12 +5975,6 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
 
           return (
             <div style={sectionStackStyle}>
-              {rawStaffNotesSample && (
-                <div style={{ background: "#fef9c3", border: "1px solid #fde047", borderRadius: 6, padding: "10px 14px", fontSize: 11, marginBottom: 8, fontFamily: "monospace", wordBreak: "break-all" }}>
-                  <strong>Debug — RAW first row from Apps Script:</strong><br/>
-                  {rawStaffNotesSample}
-                </div>
-              )}
               {renderNotePanel("Equipment")}
               {renderNotePanel("Purchase")}
               <Panel title="Plant Maintenance Log">
