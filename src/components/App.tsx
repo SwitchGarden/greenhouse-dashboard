@@ -397,65 +397,8 @@ const addDays = (dateString: string, days: number) => {
   return date.toISOString().slice(0, 10);
 };
 
-const printSection = (title: string, headers: string[], rows: string[][]) => {
-  const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const landscape = headers.length >= 6;
-  const headerHtml = headers.map(h => `<th>${h}</th>`).join("");
-  const rowsHtml = rows.map(row =>
-    `<tr>${row.map(cell => `<td>${cell ?? ""}</td>`).join("")}</tr>`
-  ).join("");
-  const html = `<!DOCTYPE html>
-<html><head>
-  <meta charset="utf-8">
-  <title>${title}</title>
-  <style>
-    @page { size: ${landscape ? "11in 8.5in" : "8.5in 11in"}; margin: 0.5in; }
-    * { box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; font-size: 11px; color: #000; margin: 0; }
-    h2 { margin: 0 0 3px 0; font-size: 15px; }
-    .date { color: #555; font-size: 10px; margin-bottom: 12px; }
-    table { width: 100%; border-collapse: collapse; }
-    th {
-      background: #0f172a;
-      color: #fff;
-      padding: 6px 8px;
-      text-align: left;
-      font-size: 10px;
-      border: 1px solid #0f172a;
-      print-color-adjust: exact;
-      -webkit-print-color-adjust: exact;
-    }
-    td {
-      padding: 5px 8px;
-      border: 1px solid #cbd5e1;
-      font-size: 11px;
-      word-wrap: break-word;
-      overflow-wrap: break-word;
-    }
-    tr { page-break-inside: avoid; }
-    tr:nth-child(even) td {
-      background: #f1f5f9;
-      print-color-adjust: exact;
-      -webkit-print-color-adjust: exact;
-    }
-    td:last-child, th:last-child { width: 35%; }
-  </style>
-</head><body>
-  <h2>${title}</h2>
-  <div class="date">${today}</div>
-  <table><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table>
-  <script>
-    window.addEventListener('load', function() {
-      setTimeout(function() { window.print(); }, 400);
-      window.addEventListener('afterprint', function() { window.close(); });
-    });
-  <\/script>
-</body></html>`;
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const w = window.open(url, "_blank");
-  if (w) setTimeout(() => URL.revokeObjectURL(url), 60000);
-};
+// printSection is handled inside the App component via the printJob state + useEffect
+// so that printing happens within the same browser window (most reliable approach).
 
 const getStartOfWeek = (date: Date) => {
   const d = new Date(date);
@@ -725,6 +668,65 @@ const getEffectiveHarvestType = (row: ProductionInventoryRow): "Full Harvest" | 
 export default function App() {
   const [activePage, setActivePage] = useState<PageKey>("dashboard");
   const [loadingData, setLoadingData] = useState(false);
+
+  // Print-in-page: inject an overlay into document.body + @media print styles so the
+  // physical printer receives the same rendering as the on-screen preview.
+  const [printJob, setPrintJob] = useState<{ title: string; headers: string[]; rows: string[][] } | null>(null);
+
+  useEffect(() => {
+    if (!printJob) return;
+    const { title, headers, rows } = printJob;
+    const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const landscape = headers.length >= 6;
+
+    const TH = `background-color:#0f172a;color:#ffffff;padding:6px 8px;text-align:left;font-size:10px;font-family:Arial,sans-serif;font-weight:bold;border:1px solid #0f172a;`;
+    const TD = `padding:5px 8px;font-size:11px;font-family:Arial,sans-serif;border:1px solid #cbd5e1;word-wrap:break-word;`;
+    const TD_EVEN = TD + `background-color:#f1f5f9;`;
+
+    const headerHtml = headers.map(h => `<th style="${TH}">${h}</th>`).join("");
+    const rowsHtml = rows.map((row, i) =>
+      `<tr>${row.map((cell, j) => {
+        const s = (i % 2 === 1 ? TD_EVEN : TD) + (j === row.length - 1 ? "width:35%;" : "");
+        return `<td style="${s}">${cell ?? ""}</td>`;
+      }).join("")}</tr>`
+    ).join("");
+
+    const overlay = document.createElement("div");
+    overlay.id = "gh-print-overlay";
+    overlay.innerHTML = `
+      <h2 style="margin:0 0 4px;font-size:15px;font-family:Arial,sans-serif;">${title}</h2>
+      <p style="color:#555;font-size:10px;margin:0 0 12px;font-family:Arial,sans-serif;">${today}</p>
+      <table style="width:100%;border-collapse:collapse;" cellspacing="0">
+        <thead><tr>${headerHtml}</tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`;
+    document.body.appendChild(overlay);
+
+    const styleEl = document.createElement("style");
+    styleEl.id = "gh-print-styles";
+    styleEl.textContent = `
+      @page { size: ${landscape ? "11in 8.5in" : "8.5in 11in"}; margin: 0.5in; }
+      #gh-print-overlay { display: none; }
+      @media print {
+        #root { display: none !important; }
+        #gh-print-overlay { display: block !important; }
+      }`;
+    document.head.appendChild(styleEl);
+
+    const timer = setTimeout(() => window.print(), 150);
+    const cleanup = () => {
+      overlay.remove();
+      styleEl.remove();
+      setPrintJob(null);
+    };
+    window.addEventListener("afterprint", cleanup, { once: true });
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("afterprint", cleanup);
+      overlay.remove();
+      styleEl.remove();
+    };
+  }, [printJob]);
 
   const [staffRows, setStaffRows] = useState<StaffActionRow[]>([]);
   const [salesOrders, setSalesOrders] = useState<SalesOrderRow[]>([]);
@@ -4954,10 +4956,10 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
           </select>
           <button
             style={secondaryButtonStyle}
-            onClick={() => printSection(
-              `Seeding Schedule — ${seedScheduleFilter}`,
-              ["Seed By", "Status", "Crop", "Trays Needed", "Ready By", "Orders"],
-              filteredPlantTodayTasks.map(task => {
+            onClick={() => setPrintJob({
+              title: `Seeding Schedule — ${seedScheduleFilter}`,
+              headers: ["Seed By", "Status", "Crop", "Trays Needed", "Ready By", "Orders"],
+              rows: filteredPlantTodayTasks.map(task => {
                 const displaySeedByDate = task.seedByDate && task.seedByDate < formatDateInput(new Date()) ? formatDateInput(new Date()) : task.seedByDate;
                 const full = Math.floor(task.totalTowers / 2);
                 const half = task.totalTowers % 2;
@@ -4970,8 +4972,8 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                   formatDateDisplay(task.earliestDueDate),
                   task.orders.join(", "),
                 ];
-              })
-            )}
+              }),
+            })}
           >
             🖨 Print
           </button>
@@ -5303,18 +5305,18 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       <div style={{ marginBottom: 12, display: "flex", justifyContent: "flex-end" }}>
         <button
           style={secondaryButtonStyle}
-          onClick={() => printSection(
-            "Orders Due This Week",
-            ["Due Date", "Customer", "Crop", "Qty", "Unit", "Status"],
-            harvestTodayTasks.map(task => [
+          onClick={() => setPrintJob({
+            title: "Orders Due This Week",
+            headers: ["Due Date", "Customer", "Crop", "Qty", "Unit", "Status"],
+            rows: harvestTodayTasks.map(task => [
               formatDateDisplay(task.dueDate),
               task.customer,
               task.crop,
               String(task.quantityNeeded),
               task.unitType,
               task.status,
-            ])
-          )}
+            ]),
+          })}
         >
           🖨 Print
         </button>
@@ -5633,18 +5635,18 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       <div style={{ marginBottom: 12, display: "flex", justifyContent: "flex-end" }}>
         <button
           style={secondaryButtonStyle}
-          onClick={() => printSection(
-            "Pack Today",
-            ["Customer", "Crop", "Unit", "Qty to Pack", "Due Date", "Status"],
-            packTodayTasks.map(task => [
+          onClick={() => setPrintJob({
+            title: "Pack Today",
+            headers: ["Customer", "Crop", "Unit", "Qty to Pack", "Due Date", "Status"],
+            rows: packTodayTasks.map(task => [
               task.customer,
               task.crop,
               task.unitType,
               String(task.quantityNeeded),
               formatDateDisplay(task.dueDate),
               task.status,
-            ])
-          )}
+            ]),
+          })}
         >
           🖨 Print
         </button>
