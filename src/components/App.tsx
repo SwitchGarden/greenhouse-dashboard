@@ -3831,14 +3831,19 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       setKtMessage(`Please enter the ${ktUnit === "Plants" ? "number of plants" : "lbs"} transferred.`);
       return;
     }
+    if (ktUnit === "Plants" && !ktCrop) {
+      setKtMessage("Please select a crop so plants can be converted to lbs.");
+      return;
+    }
     setKtSaving(true); setKtMessage("");
     const qty = Number(ktQty);
+    const lbsValue = ktUnit === "Lbs" ? qty : calculateExpectedLbs(ktCrop, qty);
     const result = await postToBackend({
       action: "saveStaffAction",
       mode: "Kitchen Transfer",
       tower: "",
       crop: ktCrop,
-      lbs: ktUnit === "Lbs" ? qty : "",
+      lbs: lbsValue,
       podsChanged: ktUnit === "Plants" ? qty : "",
       status: "Completed",
       stage: "",
