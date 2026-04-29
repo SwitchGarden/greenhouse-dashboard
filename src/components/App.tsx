@@ -399,19 +399,44 @@ const addDays = (dateString: string, days: number) => {
 
 const printSection = (title: string, headers: string[], rows: string[][]) => {
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const landscape = headers.length >= 6;
   const headerHtml = headers.map(h => `<th>${h}</th>`).join("");
   const rowsHtml = rows.map(row =>
-    `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`
+    `<tr>${row.map(cell => `<td>${cell ?? ""}</td>`).join("")}</tr>`
   ).join("");
   const html = `<!DOCTYPE html><html><head><title>${title}</title><style>
-    body { font-family: Arial, sans-serif; font-size: 12px; color: #000; margin: 20px; }
-    h2 { margin: 0 0 4px 0; font-size: 16px; }
-    .date { color: #555; font-size: 11px; margin-bottom: 14px; }
-    table { width: 100%; border-collapse: collapse; }
-    th { background: #0f172a; color: #fff; padding: 7px 10px; text-align: left; font-size: 11px; }
-    td { padding: 7px 10px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
-    tr:nth-child(even) td { background: #f8fafc; }
-    @media print { button { display: none; } }
+    @page { size: ${landscape ? "11in 8.5in" : "8.5in 11in"}; margin: 0.5in; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 11px; color: #000; margin: 0; }
+    h2 { margin: 0 0 3px 0; font-size: 15px; }
+    .date { color: #555; font-size: 10px; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; table-layout: auto; }
+    th {
+      background: #0f172a;
+      color: #fff;
+      padding: 6px 8px;
+      text-align: left;
+      font-size: 10px;
+      border: 1px solid #0f172a;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    td {
+      padding: 5px 8px;
+      border: 1px solid #cbd5e1;
+      font-size: 11px;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      max-width: 0;
+    }
+    tr { page-break-inside: avoid; }
+    tr:nth-child(even) td {
+      background: #f1f5f9;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    /* Last column (typically Orders/Notes) gets extra width */
+    td:last-child, th:last-child { width: 35%; }
   </style></head><body>
     <h2>${title}</h2>
     <div class="date">${today}</div>
