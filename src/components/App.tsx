@@ -842,6 +842,14 @@ export default function App() {
   const [transplantReadyDate, setTransplantReadyDate] = useState(addDays(formatDateInput(new Date()), 21));
   const [transplantNotes, setTransplantNotes] = useState("");
 
+  // Manual add seeded tray
+  const [addTrayTower, setAddTrayTower] = useState("");
+  const [addTrayCrop, setAddTrayCrop] = useState("");
+  const [addTrayType, setAddTrayType] = useState<"Full Tray" | "Half Tray">("Full Tray");
+  const [addTrayDate, setAddTrayDate] = useState(formatDateInput(new Date()));
+  const [addTraySaving, setAddTraySaving] = useState(false);
+  const [addTrayMessage, setAddTrayMessage] = useState("");
+
   useEffect(() => {
     loadAllData();
   }, []);
@@ -1518,7 +1526,15 @@ const plantTodayTasks = useMemo(() => {
 
     current.totalTowers += remainingTowersNeeded;
     current.orderCount += 1;
-    current.orders.push(`${customer} (${remainingTowersNeeded} towers)`);
+    // Accumulate towers per customer so repeated market weeks consolidate
+    const existingEntry = current.orders.find(o => o.startsWith(customer + " ("));
+    if (existingEntry) {
+      const idx = current.orders.indexOf(existingEntry);
+      const prevTowers = parseInt(existingEntry.match(/\((\d+) towers\)/)?.[1] || "0", 10);
+      current.orders[idx] = `${customer} (${prevTowers + remainingTowersNeeded} towers)`;
+    } else {
+      current.orders.push(`${customer} (${remainingTowersNeeded} towers)`);
+    }
     if (!current.earliestDueDate || new Date(dueDate) < new Date(current.earliestDueDate)) {
       current.earliestDueDate = dueDate;
     }
@@ -3142,6 +3158,44 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
       setSeededEditMessage("Error saving changes.");
     } finally {
       setSeededEditSaving(false);
+    }
+  };
+
+  const handleAddSeededTray = async () => {
+    if (!addTrayCrop) { setAddTrayMessage("Please select a crop."); return; }
+    if (!addTrayDate) { setAddTrayMessage("Please enter a seeded date."); return; }
+    setAddTraySaving(true);
+    setAddTrayMessage("");
+    try {
+      const pods = addTrayType === "Full Tray" ? FULL_TRAY_SEEDS : HALF_TRAY_SEEDS;
+      const readyDate = addDays(addTrayDate, 42);
+      const expectedLbs = calculateExpectedLbs(normalizeCropKey(addTrayCrop), pods);
+      await postToBackend({
+        action: "saveProductionInventory",
+        tower: addTrayTower.trim(),
+        towerType: "Low Density",
+        maxPods: pods,
+        activePods: pods,
+        crop: addTrayCrop,
+        stage: "Seeded",
+        seededDate: addTrayDate,
+        transplantDate: "",
+        estimatedReadyDate: readyDate,
+        expectedLbs,
+        remainingExpectedLbs: expectedLbs,
+        status: "Active",
+        notes: `Manually added seeded tray (${addTrayType}).`,
+      });
+      setAddTrayMessage("Tray added.");
+      setAddTrayTower("");
+      setAddTrayCrop("");
+      setAddTrayType("Full Tray");
+      setAddTrayDate(formatDateInput(new Date()));
+      await loadProductionInventory();
+    } catch (err) {
+      setAddTrayMessage("Error saving tray.");
+    } finally {
+      setAddTraySaving(false);
     }
   };
 
@@ -4853,6 +4907,34 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
     </Panel>
 
     <Panel title="Seeded Section">
+      <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+        <div style={{ fontWeight: 600, fontSize: 13, color: "#166534", marginBottom: 10 }}>Manually Add a Seeded Tray</div>
+        <FormGrid columns={2}>
+          <Field label="Crop *">
+            <select value={addTrayCrop} onChange={e => setAddTrayCrop(e.target.value)} style={inputStyle}>
+              <option value="">Select crop</option>
+              {uniqueCrops.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Tray Type">
+            <select value={addTrayType} onChange={e => setAddTrayType(e.target.value as "Full Tray" | "Half Tray")} style={inputStyle}>
+              <option value="Full Tray">Full Tray (88 pods)</option>
+              <option value="Half Tray">Half Tray (44 pods)</option>
+            </select>
+          </Field>
+          <Field label="Seeded Date *">
+            <input type="date" value={addTrayDate} onChange={e => setAddTrayDate(e.target.value)} style={inputStyle} />
+          </Field>
+          <Field label="Tower Name (optional)">
+            <input value={addTrayTower} onChange={e => setAddTrayTower(e.target.value)} style={inputStyle} placeholder="e.g. R1 (fill in after transplant)" />
+          </Field>
+        </FormGrid>
+        <ActionRow message={addTrayMessage}>
+          <button style={primaryButtonStyle} disabled={addTraySaving} onClick={handleAddSeededTray}>
+            {addTraySaving ? "Saving…" : "Add Tray"}
+          </button>
+        </ActionRow>
+      </div>
       <div style={{ maxHeight: 480, overflowY: "auto", overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 10 }}>
         <TableScroll>
         <table style={tableStyle}>
