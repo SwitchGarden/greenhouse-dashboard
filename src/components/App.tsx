@@ -662,9 +662,10 @@ export default function App() {
 
   // Staff Board form state
   const [noteCategory, setNoteCategory] = useState<"Equipment" | "Purchase">("Equipment");
-  const [noteDescription, setNoteDescription] = useState("");
-  const [noteAssignedTo, setNoteAssignedTo] = useState("");
-  const [noteDueDate, setNoteDueDate] = useState("");
+  const [noteInputs, setNoteInputs] = useState<Record<"Equipment" | "Purchase", { description: string; assignedTo: string; dueDate: string }>>({
+    Equipment: { description: "", assignedTo: "", dueDate: "" },
+    Purchase:  { description: "", assignedTo: "", dueDate: "" },
+  });
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteMessage, setNoteMessage] = useState("");
   const [editingNoteRow, setEditingNoteRow] = useState<number | null>(null);
@@ -5790,19 +5791,21 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
                 return da.localeCompare(db);
               });
 
-          const handleSaveNote = async () => {
-            if (!noteDescription.trim()) { setNoteMessage("Description is required."); return; }
+          const handleSaveNote = async (category: "Equipment" | "Purchase") => {
+            const { description, assignedTo, dueDate } = noteInputs[category];
+            if (!description.trim()) { setNoteMessage("Description is required."); return; }
+            setNoteCategory(category);
             setNoteSaving(true); setNoteMessage("");
             const result = await postToBackend({
               action: "saveStaffNote",
-              category: noteCategory,
-              description: noteDescription.trim(),
-              assignedTo: noteAssignedTo.trim(),
-              dueDate: noteDueDate,
+              category,
+              description: description.trim(),
+              assignedTo: assignedTo.trim(),
+              dueDate,
               status: "In Progress",
             });
             if (result.ok) {
-              setNoteDescription(""); setNoteAssignedTo(""); setNoteDueDate("");
+              setNoteInputs(prev => ({ ...prev, [category]: { description: "", assignedTo: "", dueDate: "" } }));
               setNoteMessage("Saved.");
               await loadStaffNotes();
             } else {
@@ -5851,30 +5854,35 @@ const handleEditInventory = (item: ProductionInventoryRow) => {
               : ["In Progress", "Completed"];
             return (
               <Panel title={category === "Equipment" ? "Equipment Needs" : "Purchase Needs"}>
-                <div style={{ marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr auto auto auto", gap: 8, alignItems: "end" }}>
-                  <Field label="Description">
-                    <input style={inputStyle} value={noteCategory === category ? noteDescription : ""}
-                      onFocus={() => setNoteCategory(category as "Equipment" | "Purchase")}
-                      onChange={e => { setNoteCategory(category as "Equipment" | "Purchase"); setNoteDescription(e.target.value); }}
-                      placeholder="Describe the need..." />
-                  </Field>
-                  <Field label="Assign To">
-                    <input style={inputStyle} value={noteCategory === category ? noteAssignedTo : ""}
-                      onFocus={() => setNoteCategory(category as "Equipment" | "Purchase")}
-                      onChange={e => { setNoteCategory(category as "Equipment" | "Purchase"); setNoteAssignedTo(e.target.value); }}
-                      placeholder="Staff name (optional)" />
-                  </Field>
-                  <Field label="Due Date">
-                    <input style={inputStyle} type="date" value={noteCategory === category ? noteDueDate : ""}
-                      onFocus={() => setNoteCategory(category as "Equipment" | "Purchase")}
-                      onChange={e => { setNoteCategory(category as "Equipment" | "Purchase"); setNoteDueDate(e.target.value); }} />
-                  </Field>
-                  <div style={{ paddingBottom: 0 }}>
-                    <button style={primaryButtonStyle} disabled={noteSaving || noteCategory !== category} onClick={handleSaveNote}>
-                      {noteSaving && noteCategory === category ? "Saving…" : "Add"}
-                    </button>
-                  </div>
-                </div>
+                {(() => {
+                  const cat = category as "Equipment" | "Purchase";
+                  const inputs = noteInputs[cat];
+                  const setField = (field: "description" | "assignedTo" | "dueDate", val: string) =>
+                    setNoteInputs(prev => ({ ...prev, [cat]: { ...prev[cat], [field]: val } }));
+                  return (
+                    <div style={{ marginBottom: 16, display: "grid", gridTemplateColumns: "1fr 1fr auto auto auto", gap: 8, alignItems: "end" }}>
+                      <Field label="Description">
+                        <input style={inputStyle} value={inputs.description}
+                          onChange={e => setField("description", e.target.value)}
+                          placeholder="Describe the need..." />
+                      </Field>
+                      <Field label="Assign To">
+                        <input style={inputStyle} value={inputs.assignedTo}
+                          onChange={e => setField("assignedTo", e.target.value)}
+                          placeholder="Staff name (optional)" />
+                      </Field>
+                      <Field label="Due Date">
+                        <input style={inputStyle} type="date" value={inputs.dueDate}
+                          onChange={e => setField("dueDate", e.target.value)} />
+                      </Field>
+                      <div style={{ paddingBottom: 0 }}>
+                        <button style={primaryButtonStyle} disabled={noteSaving && noteCategory === cat} onClick={() => handleSaveNote(cat)}>
+                          {noteSaving && noteCategory === cat ? "Saving…" : "Add"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {noteCategory === category && noteMessage && (
                   <div style={{ fontSize: 13, color: "#166534", marginBottom: 8 }}>{noteMessage}</div>
                 )}
