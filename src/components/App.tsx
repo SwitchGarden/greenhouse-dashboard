@@ -1383,6 +1383,7 @@ const plantTodayTasks = useMemo(() => {
       totalTowers: number;
       orders: string[];
       orderCount: number;
+      customerDemandCounts: Map<string, number>;
       seedByDate: string;
       earliestDueDate: string;
       currentAvailableLbs: number;
@@ -1547,11 +1548,21 @@ const plantTodayTasks = useMemo(() => {
       pool.readyLbs = Math.max(0, availableLbsByDue - consumedLbs);
       pool.readyPlants = Math.max(0, availablePlantsByDue - Math.round((consumedLbs * 16) / 6));
       pool.futureEntries = remainingFutureEntries;
-      // Add proposed new towers to pool so later demands can draw from them
+      // Add proposed new towers to pool so later demands can draw from them.
+      // For repeat-harvest (trim) crops, add all trim cycles so future weeks see the full
+      // multi-harvest yield and don't generate redundant seeding tasks.
       if (newTowersNeeded > 0) {
         const proposedReadyDate = addDays(today, 42);
         const proposedLbs = newTowersNeeded * avgQtyPerTower;
-        pool.futureEntries = [...pool.futureEntries, { readyDate: proposedReadyDate, lbs: proposedLbs, plants: 0 }];
+        if (REPEAT_HARVEST_CROPS.has(cropKey)) {
+          const trimEntries = [];
+          for (let i = 0; i < MAX_TRIMS; i++) {
+            trimEntries.push({ readyDate: addDays(proposedReadyDate, i * TRIM_REGROWTH_DAYS), lbs: proposedLbs, plants: 0 });
+          }
+          pool.futureEntries = [...pool.futureEntries, ...trimEntries];
+        } else {
+          pool.futureEntries = [...pool.futureEntries, { readyDate: proposedReadyDate, lbs: proposedLbs, plants: 0 }];
+        }
       }
     }
 
@@ -1594,6 +1605,7 @@ const plantTodayTasks = useMemo(() => {
       totalTowers: 0,
       orders: [],
       orderCount: 0,
+      customerDemandCounts: new Map<string, number>(),
       seedByDate: effectiveSeedByDate,
       earliestDueDate: dueDate,
       currentAvailableLbs: cropInventory ? cropInventory.availableLbs : 0,
@@ -1606,11 +1618,15 @@ const plantTodayTasks = useMemo(() => {
     current.totalTowers += remainingTowersNeeded;
     current.orderCount += 1;
     // Accumulate towers per customer so repeated market weeks consolidate
+    const prevDemandCount = current.customerDemandCounts.get(customer) || 0;
+    current.customerDemandCounts.set(customer, prevDemandCount + 1);
     const existingEntry = current.orders.find(o => o.startsWith(customer + " ("));
     if (existingEntry) {
       const idx = current.orders.indexOf(existingEntry);
-      const prevTowers = parseInt(existingEntry.match(/\((\d+) towers\)/)?.[1] || "0", 10);
-      current.orders[idx] = `${customer} (${prevTowers + remainingTowersNeeded} towers)`;
+      const prevTowers = parseInt(existingEntry.match(/\((\d+) tower/)?.[1] || "0", 10);
+      const demandCount = current.customerDemandCounts.get(customer) || 1;
+      const weekLabel = demandCount > 1 ? `${demandCount} weeks, ` : "";
+      current.orders[idx] = `${customer} (${weekLabel}${prevTowers + remainingTowersNeeded} towers)`;
     } else {
       current.orders.push(`${customer} (${remainingTowersNeeded} towers)`);
     }
@@ -1661,6 +1677,7 @@ const plantTodayTasks = useMemo(() => {
         totalTowers: 1,
         orders: [replacementLabel],
         orderCount: 0,
+        customerDemandCounts: new Map<string, number>(),
         seedByDate: effectiveReplaceSeedByDate,
         earliestDueDate: exhaustDate,
         currentAvailableLbs: cropInventory ? cropInventory.availableLbs : 0,
