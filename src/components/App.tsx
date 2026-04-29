@@ -959,7 +959,7 @@ export default function App() {
         rowNumber: (r.rowNumber ?? r.RowNumber ?? 0) as number,
         Timestamp:    (r.Timestamp    ?? r.timestamp    ?? "") as string,
         Category:     (r.Category     ?? r.category     ?? "") as string,
-        Description:  (r.Description  ?? r.description  ?? r.Notes ?? r.notes ?? r.note ?? r.Note ?? "") as string,
+        Description:  (r.Description ?? r.Descripton ?? r.description ?? r.descripton ?? r.Notes ?? r.notes ?? r.note ?? r.Note ?? "") as string,
         "Assigned To":(r["Assigned To"] ?? r["assigned_to"] ?? r.assignedTo ?? "") as string,
         "Due Date":   (r["Due Date"]  ?? r["due_date"]  ?? r.dueDate ?? "") as string,
         Status:       (r.Status       ?? r.status       ?? "") as string,
